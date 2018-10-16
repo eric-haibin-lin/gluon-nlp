@@ -124,14 +124,13 @@ class NMTModel(Block):
             else:
                 self.tgt_proj = tgt_proj
 
-    def encode(self, inputs, states=None, valid_length=None):
+    def encode(self, inputs, states=None):
         """Encode the input sequence.
 
         Parameters
         ----------
         inputs : NDArray
         states : list of NDArrays or None, default None
-        valid_length : NDArray or None, default None
 
         Returns
         -------
@@ -140,14 +139,13 @@ class NMTModel(Block):
         """
         return self.encoder(self.src_embed(inputs), states)
 
-    def decode_seq(self, inputs, states, valid_length=None):
+    def decode_seq(self, inputs, states):
         """Decode given the input sequence.
 
         Parameters
         ----------
         inputs : NDArray
         states : list of NDArrays
-        valid_length : NDArray or None, default None
 
         Returns
         -------
@@ -158,10 +156,9 @@ class NMTModel(Block):
         additional_outputs : list
             Additional outputs of the decoder, e.g, the attention weights
         """
+        embedded = self.tgt_embed(inputs)
         outputs = \
-            self.decoder.decode_seq(inputs=self.tgt_embed(inputs),
-                                    states=states,
-                                    valid_length=valid_length)
+            self.decoder.decode_seq(inputs=embedded, states=states)
         outputs = self.tgt_proj(outputs)
         return outputs
 
@@ -187,7 +184,7 @@ class NMTModel(Block):
         step_output = self.tgt_proj(step_output)
         return step_output, states, step_additional_outputs
 
-    def __call__(self, src_seq, tgt_seq, src_valid_length=None, tgt_valid_length=None, states=None):  #pylint: disable=arguments-differ
+    def __call__(self, src_seq, tgt_seq, states=None, attention_vec=None):  #pylint: disable=arguments-differ
         """Generate the prediction given the src_seq and tgt_seq.
 
         This is used in training an NMT model.
@@ -196,8 +193,6 @@ class NMTModel(Block):
         ----------
         src_seq : NDArray
         tgt_seq : NDArray
-        src_valid_length : NDArray or None
-        tgt_valid_length : NDArray or None
 
         Returns
         -------
@@ -206,9 +201,9 @@ class NMTModel(Block):
         additional_outputs : list of list
             Additional outputs of encoder and decoder, e.g, the attention weights
         """
-        return super(NMTModel, self).__call__(src_seq, tgt_seq, src_valid_length, tgt_valid_length, states)
+        return super(NMTModel, self).__call__(src_seq, tgt_seq, states, attention_vec)
 
-    def forward(self, src_seq, tgt_seq, src_valid_length=None, tgt_valid_length=None, states=None):  #pylint: disable=arguments-differ
+    def forward(self, src_seq, tgt_seq, states=None, attention_vec=None):  #pylint: disable=arguments-differ
         """Generate the prediction given the src_seq and tgt_seq.
 
         This is used in training an NMT model.
@@ -217,8 +212,6 @@ class NMTModel(Block):
         ----------
         src_seq : NDArray
         tgt_seq : NDArray
-        src_valid_length : NDArray or None
-        tgt_valid_length : NDArray or None
 
         Returns
         -------
@@ -228,11 +221,10 @@ class NMTModel(Block):
             Additional outputs of encoder and decoder, e.g, the attention weights
         """
         additional_outputs = []
-        encoder_outputs, encoder_additional_outputs = self.encode(src_seq,
-                                                                  valid_length=src_valid_length, states=states)
-        decoder_states = self.decoder.init_state_from_encoder(encoder_outputs,
-                                                              encoder_valid_length=src_valid_length)
-        outputs = self.decode_seq(tgt_seq, decoder_states, tgt_valid_length)
+        encoder_outputs, _ = self.encode(src_seq, states=states)
+        decoder_states = self.decoder.init_state_from_encoder(encoder_outputs, attention_vec=attention_vec)
+        outputs = self.decoder(self.tgt_embed(tgt_seq), decoder_states)
+        outputs = self.tgt_proj(outputs)
         return outputs, None
 
 

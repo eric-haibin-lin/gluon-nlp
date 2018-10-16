@@ -407,8 +407,6 @@ def train():
                 model.collect_params().zero_grad()
             src_seq = src_seq.as_in_context(ctx)
             tgt_seq = tgt_seq.as_in_context(ctx)
-            src_valid_length = src_valid_length.as_in_context(ctx)
-            tgt_valid_length = tgt_valid_length.as_in_context(ctx)
             # ==========================================
             # TODO: set batching scope to enable dynamic batching
             # ==========================================
@@ -420,8 +418,9 @@ def train():
                 for i in range(num_states):
                     state = cells[i].begin_state(batch_size=1, ctx=src_seq.context)
                     states.append(state)
+                attention_vec = mx.nd.zeros((1, args.num_hidden), ctx=ctx)
                 # encode, decode
-                out, _ = model(src_seq, tgt_seq[:, :-1], None, None, states=states)
+                out, _ = model(src_seq, tgt_seq[:, :-1], states=states, attention_vec=attention_vec)
                 loss = loss_function(out, tgt_seq[:, 1:], tgt_valid_length - 1).mean()
                 loss = loss * (tgt_seq.shape[1] - 1) / (tgt_valid_length - 1).mean()
                 losses.append(loss)
@@ -445,9 +444,9 @@ def train():
                 wps = log_wc / (time.time() - log_start_time)
                 l = log_avg_loss.asscalar() / args.log_interval / args.batch_size
                 logging.info('[Epoch {} Batch {}/{}] loss={:.4f}, ppl={:.4f}, '
-                             'throughput={:.2f} wps, wc={:.2f}K'
+                             'throughput={:.2f} wps, wc={:.2f}'
                              .format(epoch_id, (batch_id + 1) / args.batch_size, len(train_data_loader) / args.batch_size,
-                                     l, np.exp(l), wps, log_wc / 1000))
+                                     l, np.exp(l), wps, log_wc))
                 log_start_time = time.time()
                 log_avg_loss = 0
                 log_wc = 0

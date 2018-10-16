@@ -72,15 +72,12 @@ class HybridBidirectionalCell(HybridRecurrentCell):
         raise NotImplementedError("Please use hybrid_unroll instead")
 
     # input
-    def hybrid_unroll(self, F, inputs, begin_state=None, layout='NTC', merge_outputs=None,
-                      valid_length=None):
+    def hybrid_unroll(self, F, inputs, begin_state=None, layout='NTC', merge_outputs=None):
         # pylint: disable=too-many-locals
         self.reset()
         assert merge_outputs, "Only merge_outputs = True is supported"
-        assert valid_length is None, "Only supports valid_length = None"
         batch_size = 1
-        if valid_length is None:
-            reversed_inputs = F.SequenceReverse(inputs, axis=0)
+        reversed_inputs = F.SequenceReverse(inputs, axis=0)
         begin_state = _get_begin_state(self, F, begin_state, inputs, batch_size)
 
         states = begin_state
@@ -88,16 +85,12 @@ class HybridBidirectionalCell(HybridRecurrentCell):
         assert merge_outputs, "Only merge_outputs = True is supported"
         l_outputs, l_states = hybrid_unroll(l_cell, inputs=inputs,
                                             begin_state=states[:len(l_cell.state_info(batch_size))],
-                                            layout=layout,
-                                            valid_length=valid_length)
+                                            layout=layout)
         r_outputs, r_states = hybrid_unroll(r_cell,
                                             inputs=reversed_inputs,
                                             begin_state=states[len(l_cell.state_info(batch_size)):],
-                                            layout=layout,
-                                            valid_length=valid_length)
-
-        if valid_length is None:
-            reversed_r_outputs = F.SequenceReverse(F.swapaxes(r_outputs,0,1), axis=0)
+                                            layout=layout)
+        reversed_r_outputs = F.SequenceReverse(F.swapaxes(r_outputs,0,1), axis=0)
         if merge_outputs:
             reversed_r_outputs = F.swapaxes(reversed_r_outputs,0,1)
             outputs = F.concat(l_outputs, reversed_r_outputs, dim=2,
@@ -303,9 +296,6 @@ class GNMTEncoder(HybridBlock, Seq2SeqEncoder):
             Input sequence. Shape (batch_size, length, C_in)
         states : list of NDArrays or None
             Initial states. The list of initial states
-        valid_length : NDArray or None
-            Valid lengths of each sequence. This is usually used when part of sequence has
-            been padded. Shape (batch_size,)
 
         Returns
         -------
@@ -341,6 +331,32 @@ class GNMTEncoder(HybridBlock, Seq2SeqEncoder):
             inputs = outputs
         return [outputs, new_states], []
 
+
+class HybridGNMTDecoder(HybridBlock):
+    def __init__(self, cell_type='lstm', attention_cell='scaled_luong',
+                 num_layers=2, hidden_size=128,
+                 dropout=0.0, use_residual=True, output_attention=False,
+                 i2h_weight_initializer=None, h2h_weight_initializer=None,
+                 i2h_bias_initializer='zeros', h2h_bias_initializer='zeros',
+                 prefix=None, params=None):
+        super(HybridGNMTDecoder, self).__init__()
+        self._decoder = GNMTDecoder(cell_type=cell_type, attention_cell=attention_cell, num_layers=num_layers,
+             hidden_size=hidden_size, dropout=dropout, use_residual=use_residual,
+             output_attention=output_attention, i2h_weight_initializer=i2h_weight_initializer,
+             h2h_weight_initializer=h2h_weight_initializer, i2h_bias_initializer=i2h_bias_initializer,
+             h2h_bias_initializer=h2h_bias_initializer, prefix=prefix, params=params)
+
+    def hybrid_forward(self, F, inputs, states):
+        inputs = F.swapaxes(inputs, 0, 1)
+        output = []
+        additional_outputs = []
+        def body(input_i, states):
+            return self._decoder(input_i, states)
+        output, states = F.contrib.foreach(body, inputs, states)
+        return F.swapaxes(output, 0,1)
+
+    def init_state_from_encoder(self, encoder_outputs, attention_vec):
+        return self._decoder.init_state_from_encoder(encoder_outputs, attention_vec)
 
 class GNMTDecoder(HybridBlock, Seq2SeqDecoder):
     """Structure of the RNN Encoder similar to that used in the
@@ -403,13 +419,12 @@ class GNMTDecoder(HybridBlock, Seq2SeqDecoder):
                                     h2h_bias_initializer=h2h_bias_initializer,
                                     prefix='rnn%d_' % i))
 
-    def init_state_from_encoder(self, encoder_outputs, encoder_valid_length=None):
+    def init_state_from_encoder(self, encoder_outputs, attention_vec):
         """Initialize the state from the encoder outputs.
 
         Parameters
         ----------
         encoder_outputs : list
-        encoder_valid_length : NDArray or None
 
         Returns
         -------
@@ -422,18 +437,10 @@ class GNMTDecoder(HybridBlock, Seq2SeqDecoder):
             - mem_masks : NDArray, optional
         """
         mem_value, rnn_states = encoder_outputs
-        batch_size, _, mem_size = mem_value.shape
-        attention_vec = mx.nd.zeros(shape=(batch_size, mem_size), ctx=mem_value.context)
         decoder_states = [rnn_states, attention_vec, mem_value]
-        mem_length = mem_value.shape[1]
-        if encoder_valid_length is not None:
-            mem_masks = mx.nd.broadcast_lesser(
-                mx.nd.arange(mem_length, ctx=encoder_valid_length.context).reshape((1, -1)),
-                encoder_valid_length.reshape((-1, 1)))
-            decoder_states.append(mem_masks)
         return decoder_states
 
-    def decode_seq(self, inputs, states, valid_length=None):
+    def decode_seq(self, inputs, states):
         """Decode the decoder inputs. This function is only used for training.
 
         Parameters
@@ -441,9 +448,6 @@ class GNMTDecoder(HybridBlock, Seq2SeqDecoder):
         inputs : NDArray, Shape (batch_size, length, C_in)
         states : list of NDArrays or None
             Initial states. The list of initial decoder states
-        valid_length : NDArray or None
-            Valid lengths of each sequence. This is usually used when part of sequence has
-            been padded. Shape (batch_size,)
 
         Returns
         -------
@@ -460,13 +464,7 @@ class GNMTDecoder(HybridBlock, Seq2SeqDecoder):
             The attention weights will have shape (batch_size, length, mem_length) or
             (batch_size, num_heads, length, mem_length)
         """
-        inputs = inputs.swapaxes(0, 1)
-        output = []
-        additional_outputs = []
-        def body(input_i, states):
-            return self.forward(input_i, states)
-        output, states = mx.nd.contrib.foreach(body, inputs, states)
-        return output.swapaxes(0,1)
+        raise NotImplementedError
 
     def __call__(self, step_input, states): #pylint: disable=arguments-differ
         """One-step-ahead decoding of the GNMT decoder.
@@ -507,7 +505,7 @@ class GNMTDecoder(HybridBlock, Seq2SeqDecoder):
         step_output, new_states =\
             super(GNMTDecoder, self).forward(step_input, states)
         new_states += states[2:]
-        return step_output, new_states#, step_additional_outputs
+        return step_output, new_states
 
     def hybrid_forward(self, F, step_input, states):  #pylint: disable=arguments-differ
         """
@@ -542,8 +540,9 @@ class GNMTDecoder(HybridBlock, Seq2SeqDecoder):
             mem_masks = None
         new_rnn_states = []
         # Process the first layer
+        concated = F.concat(step_input, attention_output, dim=-1)
         rnn_out, layer_state =\
-            self.rnn_cells[0](F.concat(step_input, attention_output, dim=-1), rnn_states[0])
+            self.rnn_cells[0](concated, rnn_states[0])
         new_rnn_states.append(layer_state)
         attention_vec, attention_weights =\
             self.attention_cell(F.expand_dims(rnn_out, axis=1),  # Shape(B, 1, C)
@@ -608,7 +607,7 @@ def get_gnmt_encoder_decoder(cell_type='lstm', attention_cell='scaled_luong', nu
                           i2h_bias_initializer=i2h_bias_initializer,
                           h2h_bias_initializer=h2h_bias_initializer,
                           prefix=prefix + 'enc_', params=params)
-    decoder = GNMTDecoder(cell_type=cell_type, attention_cell=attention_cell, num_layers=num_layers,
+    decoder = HybridGNMTDecoder(cell_type=cell_type, attention_cell=attention_cell, num_layers=num_layers,
                           hidden_size=hidden_size, dropout=dropout,
                           use_residual=use_residual,
                           i2h_weight_initializer=i2h_weight_initializer,
