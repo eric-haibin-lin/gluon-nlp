@@ -138,7 +138,7 @@ class NMTModel(Block):
         outputs : list
             Outputs of the encoder.
         """
-        return self.encoder(self.src_embed(inputs), states, valid_length)
+        return self.encoder(self.src_embed(inputs), states)
 
     def decode_seq(self, inputs, states, valid_length=None):
         """Decode given the input sequence.
@@ -158,12 +158,12 @@ class NMTModel(Block):
         additional_outputs : list
             Additional outputs of the decoder, e.g, the attention weights
         """
-        outputs, states, additional_outputs =\
+        outputs = \
             self.decoder.decode_seq(inputs=self.tgt_embed(inputs),
                                     states=states,
                                     valid_length=valid_length)
         outputs = self.tgt_proj(outputs)
-        return outputs, states, additional_outputs
+        return outputs
 
     def decode_step(self, step_input, states):
         """One step decoding of the translation model.
@@ -187,7 +187,7 @@ class NMTModel(Block):
         step_output = self.tgt_proj(step_output)
         return step_output, states, step_additional_outputs
 
-    def __call__(self, src_seq, tgt_seq, src_valid_length=None, tgt_valid_length=None):  #pylint: disable=arguments-differ
+    def __call__(self, src_seq, tgt_seq, src_valid_length=None, tgt_valid_length=None, states=None):  #pylint: disable=arguments-differ
         """Generate the prediction given the src_seq and tgt_seq.
 
         This is used in training an NMT model.
@@ -206,9 +206,9 @@ class NMTModel(Block):
         additional_outputs : list of list
             Additional outputs of encoder and decoder, e.g, the attention weights
         """
-        return super(NMTModel, self).__call__(src_seq, tgt_seq, src_valid_length, tgt_valid_length)
+        return super(NMTModel, self).__call__(src_seq, tgt_seq, src_valid_length, tgt_valid_length, states)
 
-    def forward(self, src_seq, tgt_seq, src_valid_length=None, tgt_valid_length=None):  #pylint: disable=arguments-differ
+    def forward(self, src_seq, tgt_seq, src_valid_length=None, tgt_valid_length=None, states=None):  #pylint: disable=arguments-differ
         """Generate the prediction given the src_seq and tgt_seq.
 
         This is used in training an NMT model.
@@ -229,14 +229,11 @@ class NMTModel(Block):
         """
         additional_outputs = []
         encoder_outputs, encoder_additional_outputs = self.encode(src_seq,
-                                                                  valid_length=src_valid_length)
+                                                                  valid_length=src_valid_length, states=states)
         decoder_states = self.decoder.init_state_from_encoder(encoder_outputs,
                                                               encoder_valid_length=src_valid_length)
-        outputs, _, decoder_additional_outputs =\
-            self.decode_seq(tgt_seq, decoder_states, tgt_valid_length)
-        additional_outputs.append(encoder_additional_outputs)
-        additional_outputs.append(decoder_additional_outputs)
-        return outputs, additional_outputs
+        outputs = self.decode_seq(tgt_seq, decoder_states, tgt_valid_length)
+        return outputs, None
 
 
 class BeamSearchTranslator(object):

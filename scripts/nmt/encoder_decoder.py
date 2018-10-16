@@ -148,7 +148,7 @@ def _nested_sequence_last(data, valid_length):
 class Seq2SeqEncoder(Block):
     r"""Base class of the encoders in sequence to sequence learning models.
     """
-    def __call__(self, inputs, valid_length=None, states=None):  #pylint: disable=arguments-differ
+    def __call__(self, inputs, states=None):  #pylint: disable=arguments-differ
         """Encode the input sequence.
 
         Parameters
@@ -166,9 +166,9 @@ class Seq2SeqEncoder(Block):
         outputs : list
             Outputs of the encoder.
         """
-        return super(Seq2SeqEncoder, self).__call__(inputs, valid_length, states)
+        return super(Seq2SeqEncoder, self).__call__(inputs, states)
 
-    def forward(self, inputs, valid_length=None, states=None):  #pylint: disable=arguments-differ
+    def forward(self, inputs, states=None):  #pylint: disable=arguments-differ
         raise NotImplementedError
 
 

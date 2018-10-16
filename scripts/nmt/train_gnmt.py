@@ -105,6 +105,8 @@ parser.add_argument('--save_dir', type=str, default='out_dir',
                     help='directory path to save the final model and training log')
 parser.add_argument('--gpu', type=int, default=None,
                     help='id of the gpu to use. Set it to empty means to use cpu.')
+parser.add_argument('--profile', action='store_true',
+                    help='use profiler')
 args = parser.parse_args()
 print(args)
 logging_config(args.save_dir)
@@ -351,7 +353,7 @@ def train():
     else:
         raise NotImplementedError
     train_batch_sampler = FixedBucketSampler(lengths=data_train_lengths,
-                                             batch_size=args.batch_size,
+                                             batch_size=1,
                                              num_buckets=args.num_buckets,
                                              ratio=args.bucket_ratio,
                                              shuffle=True,
@@ -383,45 +385,79 @@ def train():
                                   batchify_fn=test_batchify_fn,
                                   num_workers=8)
     best_valid_bleu = 0.0
+    if args.profile:
+        mx.nd.waitall()
+        mx.profiler.set_config(profile_all=True, filename='profile_output.json')
+        mx.profiler.set_state('run')
+    # ==========================================
+    # we set req to 'add' to accumulate gradient.
+    # ==========================================
+    for v in model.collect_params().values():
+        v.grad_req = 'add'
+
     for epoch_id in range(args.epochs):
         log_avg_loss = 0
-        log_avg_gnorm = 0
         log_wc = 0
         log_start_time = time.time()
+        num_samples = 0
+        losses = []
         for batch_id, (src_seq, tgt_seq, src_valid_length, tgt_valid_length)\
                 in enumerate(train_data_loader):
-            # logging.info(src_seq.context) Context suddenly becomes GPU.
+            if num_samples == 0:
+                model.collect_params().zero_grad()
             src_seq = src_seq.as_in_context(ctx)
             tgt_seq = tgt_seq.as_in_context(ctx)
             src_valid_length = src_valid_length.as_in_context(ctx)
             tgt_valid_length = tgt_valid_length.as_in_context(ctx)
+            # ==========================================
+            # TODO: set batching scope to enable dynamic batching
+            # ==========================================
             with mx.autograd.record():
-                out, _ = model(src_seq, tgt_seq[:, :-1], src_valid_length, tgt_valid_length - 1)
+                # initial encoder states
+                states = []
+                cells = model.encoder.rnn_cells
+                num_states = len(cells)
+                for i in range(num_states):
+                    state = cells[i].begin_state(batch_size=1, ctx=src_seq.context)
+                    states.append(state)
+                # encode, decode
+                out, _ = model(src_seq, tgt_seq[:, :-1], None, None, states=states)
                 loss = loss_function(out, tgt_seq[:, 1:], tgt_valid_length - 1).mean()
                 loss = loss * (tgt_seq.shape[1] - 1) / (tgt_valid_length - 1).mean()
+                losses.append(loss)
                 loss.backward()
+            # ==========================================
+            # TODO: if using batching, instead of loss.backward(), do autograd.backward(losses) outside the batching scope
+            # ==========================================
+            num_samples += 1
+            src_wc = src_seq.size
+            tgt_wc = tgt_seq.size - 1
+            log_avg_loss += loss
+            log_wc += src_wc + tgt_wc
+            if num_samples < args.batch_size:
+                continue
             grads = [p.grad(ctx) for p in model.collect_params().values()]
             gnorm = gluon.utils.clip_global_norm(grads, args.clip)
             trainer.step(1)
-            src_wc = src_valid_length.sum().asscalar()
-            tgt_wc = (tgt_valid_length - 1).sum().asscalar()
-            step_loss = loss.asscalar()
-            log_avg_loss += step_loss
-            log_avg_gnorm += gnorm
-            log_wc += src_wc + tgt_wc
-            if (batch_id + 1) % args.log_interval == 0:
+            num_samples = 0
+            losses = []
+            if (batch_id + 1) % (args.log_interval * args.batch_size) == 0:
                 wps = log_wc / (time.time() - log_start_time)
-                logging.info('[Epoch {} Batch {}/{}] loss={:.4f}, ppl={:.4f}, gnorm={:.4f}, '
-                             'throughput={:.2f}K wps, wc={:.2f}K'
-                             .format(epoch_id, batch_id + 1, len(train_data_loader),
-                                     log_avg_loss / args.log_interval,
-                                     np.exp(log_avg_loss / args.log_interval),
-                                     log_avg_gnorm / args.log_interval,
-                                     wps / 1000, log_wc / 1000))
+                l = log_avg_loss.asscalar() / args.log_interval / args.batch_size
+                logging.info('[Epoch {} Batch {}/{}] loss={:.4f}, ppl={:.4f}, '
+                             'throughput={:.2f} wps, wc={:.2f}K'
+                             .format(epoch_id, (batch_id + 1) / args.batch_size, len(train_data_loader) / args.batch_size,
+                                     l, np.exp(l), wps, log_wc / 1000))
                 log_start_time = time.time()
                 log_avg_loss = 0
-                log_avg_gnorm = 0
                 log_wc = 0
+                if args.profile:
+                    mx.nd.waitall()
+                    mx.profiler.set_state('stop')
+                    exit()
+
+        logging.info('Done Training one epoch. Exit now.')
+        exit()
         valid_loss, valid_translation_out = evaluate(val_data_loader)
         valid_bleu_score, _, _, _, _ = compute_bleu([val_tgt_sentences], valid_translation_out)
         logging.info('[Epoch {}] valid Loss={:.4f}, valid ppl={:.4f}, valid bleu={:.2f}'
