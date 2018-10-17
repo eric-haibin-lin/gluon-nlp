@@ -407,6 +407,7 @@ def train():
                 model.collect_params().zero_grad()
             src_seq = src_seq.as_in_context(ctx)
             tgt_seq = tgt_seq.as_in_context(ctx)
+            tgt_valid_length = tgt_valid_length.as_in_context(ctx)
             # ==========================================
             # TODO: set batching scope to enable dynamic batching
             # ==========================================
