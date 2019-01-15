@@ -18,7 +18,7 @@
 # under the License.
 
 """Blocks for sampled losses."""
-__all__ = ['ISDense', 'NCEDense', 'SparseISDense', 'SparseNCEDense']
+__all__ = ['ISDense', 'NCEDense', 'SparseISDense', 'SparseNCEDense', 'SparseSCE']
 
 from mxnet import nd
 from mxnet.gluon import Block, HybridBlock
@@ -39,17 +39,24 @@ class _SampledDenseHelper(HybridBlock):
         one of the true classes.
     sparse_label: bool
         Whether to output label as an integer array instead of probability distribution.
+    learnable_c : bool, default False.
+        Whether to include a learnable parameter 'c' for partition function.
     """
     def __init__(self, num_classes, num_sampled, in_unit, remove_accidental_hits,
-                 sparse_label, prefix=None, params=None):
+                 sparse_label, learnable_c=False, prefix=None, params=None):
         super(_SampledDenseHelper, self).__init__(prefix=prefix, params=params)
         self._num_classes = num_classes
         self._num_sampled = num_sampled
         self._in_unit = in_unit
         self._remove_accidental_hits = remove_accidental_hits
         self._sparse_label = sparse_label
+        self._learnable_c = learnable_c
+        if self._learnable_c:
+            self.c = self.params.get('c', shape=(1,1))
+        else:
+            self.c = self.params.get_constant('c', nd.zeros((1,1)))
 
-    def hybrid_forward(self, F, x, sampled_values, label, w_all, b_all):
+    def hybrid_forward(self, F, x, sampled_values, label, w_all, b_all, c):
         """Forward computation."""
         sampled_candidates, expected_count_sampled, expected_count_true = sampled_values
         # (num_sampled, in_unit)
@@ -79,8 +86,11 @@ class _SampledDenseHelper(HybridBlock):
                                            shape=(1, self._num_sampled))
         expected_count_true = expected_count_true.reshape((-1,))
         pred_true = pred_true - F.log(expected_count_true)
-        pred_true = pred_true.reshape((-1, 1))
         pred_sampled = F.broadcast_sub(pred_sampled, F.log(expected_count_sampled))
+        pred_true = pred_true.reshape((-1, 1))
+        if self._learnable_c:
+            pred_true = F.broadcast_sub(pred_true, c)
+            pred_sampled = F.broadcast_sub(pred_sampled, c)
 
         # pred and new_labels
         # (batch_size, 1+num_sampled)
@@ -128,6 +138,8 @@ class _SampledDense(HybridBlock):
         Initializer for the bias vector.
     sparse_grad: bool, default True.
         Whether to use sparse gradient.
+    learnable_c : bool, default False.
+        Whether to include a learnable parameter 'c' for partition function.
 
     Inputs:
         - **x**: A tensor of shape `(batch_size, in_unit)`. The forward activation of
@@ -149,7 +161,8 @@ class _SampledDense(HybridBlock):
     """
     def __init__(self, num_classes, num_sampled, in_unit, remove_accidental_hits,
                  sparse_label, dtype='float32', weight_initializer=None,
-                 bias_initializer='zeros', sparse_grad=True, prefix=None, params=None):
+                 bias_initializer='zeros', sparse_grad=True, learnable_c=False,
+                 prefix=None, params=None):
         super(_SampledDense, self).__init__(prefix=prefix, params=params)
         with self.name_scope():
             grad_stype = 'row_sparse' if sparse_grad else 'default'
@@ -159,7 +172,8 @@ class _SampledDense(HybridBlock):
             self.bias = self.params.get('bias', shape=(num_classes,), init=bias_initializer,
                                         dtype=dtype)
         self._dense = _SampledDenseHelper(num_classes, num_sampled, in_unit,
-                                          remove_accidental_hits, sparse_label)
+                                          remove_accidental_hits, sparse_label,
+                                          learnable_c=learnable_c)
         self._num_classes = num_classes
         self._num_sampled = num_sampled
         self._in_unit = in_unit
@@ -419,6 +433,8 @@ class _SparseSampledDense(Block):
         Initializer for the `kernel` weights matrix.
     bias_initializer: str or `Initializer`, optional
         Initializer for the bias vector.
+    learnable_c : bool, default False.
+        Whether to include a learnable parameter 'c' for partition function.
 
     Inputs:
         - **x**: A tensor of shape `(batch_size, in_unit)`. The forward activation of
@@ -440,7 +456,7 @@ class _SparseSampledDense(Block):
     """
     def __init__(self, num_classes, num_sampled, in_unit, remove_accidental_hits,
                  sparse_label, dtype='float32', weight_initializer=None,
-                 bias_initializer='zeros', prefix=None, params=None):
+                 bias_initializer='zeros', learnable_c=False, prefix=None, params=None):
         super(_SparseSampledDense, self).__init__(prefix=prefix, params=params)
         with self.name_scope():
             self.weight = self.params.get('weight', shape=(num_classes, in_unit),
@@ -449,7 +465,8 @@ class _SparseSampledDense(Block):
             self.bias = self.params.get('bias', shape=(num_classes,), init=bias_initializer,
                                         dtype=dtype)
             self._dense = _SampledDenseHelper(num_classes, num_sampled, in_unit,
-                                              remove_accidental_hits, sparse_label)
+                                              remove_accidental_hits, sparse_label,
+                                              learnable_c=learnable_c)
         self._num_classes = num_classes
         self._num_sampled = num_sampled
         self._in_unit = in_unit
@@ -652,7 +669,7 @@ class SparseNCEDense(_SparseSampledDense):
     Outputs:
         - **out**: A tensor of shape `(batch_size, 1+num_sampled)`.
           The output probability for the true class and sampled classes
-        - **new_targets**: A tensor of shape `(batch_size,)`.
+        - **new_targets**: A tensor of shape `(batch_size, 1+num_sampled)`.
           The new target classes.
 
     """
@@ -663,3 +680,54 @@ class SparseNCEDense(_SparseSampledDense):
                                              remove_accidental_hits, False,
                                              dtype, weight_initializer, bias_initializer,
                                              prefix=prefix, params=params)
+
+class SparseSCE(_SparseSampledDense):
+    """Steepest noise contrastive estimated Dense block with sparse weights, which computes sampled
+    pred output and labels for steepest noise contrastive estimation loss with learnable
+    partition function during training.
+
+    Please use `loss.SigmoidBinaryCrossEntropyLoss` for steepest noise contrastive estimation loss
+    during training.
+
+    Parameters
+    ----------
+    num_classes: int
+        Number of possible classes.
+    num_sampled: int
+        Number of classes randomly sampled for each batch.
+    in_unit: int
+        Dimensionality of the input space.
+    remove_accidental_hits: bool, default True
+        Whether to remove "accidental hits" when a sampled candidate is equal to
+        one of the true classes.
+    dtype : str or np.dtype, default 'float32'
+        Data type of output embeddings.
+    weight_initializer : str or `Initializer`, optional
+        Initializer for the `kernel` weights matrix.
+    bias_initializer: str or `Initializer`, optional
+        Initializer for the bias vector.
+
+    Inputs:
+        - **x**: A tensor of shape `(batch_size, in_unit)`. The forward activation of
+          the input network.
+        - **sampled_values** : A list of three tensors for
+          `sampled_classes` with shape `(num_samples,)`,
+          `expected_count_sampled` with shape `(num_samples,)`, and
+          `expected_count_true` with shape `(sequence_length, batch_size)`.
+        - **label**: A tensor of shape `(batch_size, 1+num_samples)`.
+          The target classes.
+
+    Outputs:
+        - **out**: A tensor of shape `(batch_size, 1+num_sampled)`.
+          The output probability for the true class and sampled classes
+        - **new_targets**: A tensor of shape `(batch_size, 1+num_sampled)`.
+          The new target classes.
+
+    """
+    def __init__(self, num_classes, num_sampled, in_unit, remove_accidental_hits=True,
+                 dtype='float32', weight_initializer=None, bias_initializer='zeros',
+                 prefix=None, params=None):
+        super(SparseSCE, self).__init__(num_classes, num_sampled, in_unit,
+                                        remove_accidental_hits, False,
+                                        dtype, weight_initializer, bias_initializer,
+                                        prefix=prefix, params=params, learnable_c=True)

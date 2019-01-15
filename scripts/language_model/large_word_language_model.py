@@ -88,12 +88,16 @@ parser.add_argument('--seed', type=int, default=0,
                     help='random seed')
 parser.add_argument('--lr', type=float, default=0.2,
                     help='initial learning rate')
+parser.add_argument('--rescale-embed', action='store_true',
+                    help='rescale embedding gradient by batch size')
 parser.add_argument('--clip', type=float, default=1.0,
                     help='gradient clipping by global norm.')
 parser.add_argument('--test-mode', action='store_true',
                     help='Whether to run through the script with few examples')
 parser.add_argument('--eval-only', action='store_true',
                     help='Whether to only run evaluation for the trained model')
+parser.add_argument('--sce', action='store_true',
+                    help='Whether to use SCE')
 args = parser.parse_args()
 
 segments = ['train', 'test']
@@ -186,9 +190,14 @@ class ParallelBigRNN(Parallelizable):
         with autograd.record():
             output, hidden, new_target = self._model(X, y, h, s)
             output = output.reshape((-3, -1))
-            new_target = new_target.reshape((-1,))
-            ls = self._loss(output, new_target) * m.reshape((-1,))
-            ls = ls / args.batch_size
+            if args.sce:
+                new_target = new_target.reshape(output.shape)
+                ls = self._loss(output, new_target, m.reshape((-1,1)))
+                ls = ls.mean()
+            else:
+                new_target = new_target.reshape((-1,))
+                ls = self._loss(output, new_target) * m.reshape((-1,))
+                ls = ls / args.batch_size
             ls.backward()
         return hidden, ls
 
@@ -199,8 +208,9 @@ eval_model = nlp.model.language_model.BigRNN(ntokens, args.emsize, args.nhid,
 model = nlp.model.language_model.train.BigRNN(ntokens, args.emsize, args.nhid,
                                               args.nlayers, args.nproj, args.k,
                                               embed_dropout=args.dropout,
-                                              encode_dropout=args.dropout)
-loss = gluon.loss.SoftmaxCrossEntropyLoss()
+                                              encode_dropout=args.dropout,
+                                              sce=args.sce)
+loss = gluon.loss.SigmoidBinaryCrossEntropyLoss() if args.sce else gluon.loss.SoftmaxCrossEntropyLoss()
 
 ###############################################################################
 # Training code
@@ -266,8 +276,10 @@ def train():
                 gluon.utils.clip_global_norm(encoder_grad, args.clip)
 
             trainer.step(len(context))
-
-            total_L += sum([mx.nd.sum(L).asscalar() / args.bptt for L in Ls])
+            if args.sce:
+                total_L += sum([L.asscalar() for L in Ls])
+            else:
+                total_L += sum([mx.nd.sum(L).asscalar() / args.bptt for L in Ls])
 
             if nbatch % args.log_interval == 0:
                 cur_L = total_L / args.log_interval / len(context)

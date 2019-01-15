@@ -23,7 +23,7 @@ from mxnet import init, nd, autograd
 from mxnet.gluon import nn, Block, contrib, rnn
 
 from ..utils import _get_rnn_layer, apply_weight_drop
-from ..sampled_block import ISDense, SparseISDense
+from ..sampled_block import ISDense, SparseISDense, SparseSCE
 
 class AWDRNN(Block):
     """AWD language model by salesforce.
@@ -305,6 +305,8 @@ class BigRNN(Block):
     sparse_grad : bool
         Whether to use RowSparseNDArray for the gradients w.r.t.
         weights of input and output embeddings.
+    sce : bool, default False
+        Whether to use steepest NCE for training.
 
     .. note: If `sparse_grad` is set to True, the gradient w.r.t input and output
              embeddings will be sparse. Only a subset of optimizers support
@@ -322,7 +324,7 @@ class BigRNN(Block):
     """
     def __init__(self, vocab_size, embed_size, hidden_size, num_layers,
                  projection_size, num_sampled, embed_dropout=0.0, encode_dropout=0.0,
-                 sparse_weight=True, sparse_grad=True, **kwargs):
+                 sparse_weight=True, sparse_grad=True, sce=False, **kwargs):
         super(BigRNN, self).__init__(**kwargs)
         self._embed_size = embed_size
         self._hidden_size = hidden_size
@@ -334,6 +336,7 @@ class BigRNN(Block):
         self._num_sampled = num_sampled
         self._sparse_weight = sparse_weight
         self._sparse_grad = sparse_grad
+        self._sce = sce
         if self._sparse_weight:
             assert self._sparse_grad, 'Dense grad with sparse weight is not supported.'
 
@@ -372,14 +375,20 @@ class BigRNN(Block):
 
     def _get_decoder(self):
         prefix = 'decoder0_'
-        if self._sparse_weight:
-            # sparse IS Dense has both sparse weight and sparse grad
-            block = SparseISDense(self._vocab_size, self._num_sampled,
-                                  self._projection_size, remove_accidental_hits=True,
-                                  prefix=prefix)
+        if self._sce:
+           assert self._sparse_weight
+           block = SparseSCE(self._vocab_size, self._num_sampled,
+                             self._projection_size, remove_accidental_hits=True,
+                             prefix=prefix)
         else:
-            block = ISDense(self._vocab_size, self._num_sampled,
-                            self._projection_size, remove_accidental_hits=True,
+            if self._sparse_weight:
+                # sparse IS Dense has both sparse weight and sparse grad
+                block = SparseISDense(self._vocab_size, self._num_sampled,
+                                      self._projection_size, remove_accidental_hits=True,
+                                      prefix=prefix)
+            else:
+                block = ISDense(self._vocab_size, self._num_sampled,
+                                self._projection_size, remove_accidental_hits=True,
                             prefix=prefix, sparse_grad=self._sparse_grad)
         return block
 
@@ -423,5 +432,6 @@ class BigRNN(Block):
                                                   layout='TNC', merge_outputs=True)
         out, new_target = self.decoder(encoded, sampled_values, label)
         out = out.reshape((length, batch_size, -1))
-        new_target = new_target.reshape((length, batch_size))
+        if not self._sce:
+            new_target = new_target.reshape((length, batch_size))
         return out, out_states, new_target
