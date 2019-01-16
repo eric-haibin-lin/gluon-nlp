@@ -75,11 +75,13 @@ class _SampledDenseHelper(HybridBlock):
                                         num_hidden=self._num_sampled)
 
         # remove accidental hits
-        if self._remove_accidental_hits:
-            label_vec = F.reshape(label, (-1, 1))
-            sample_vec = F.reshape(sampled_candidates, (1, -1))
-            mask = F.broadcast_equal(label_vec, sample_vec) * -1e37
-            pred_sampled = pred_sampled + mask
+        # work around memory leaks due to missing inputs
+        label_vec = F.reshape(label, (-1, 1))
+        sample_vec = F.reshape(sampled_candidates, (1, -1))
+        mask = F.broadcast_equal(label_vec, sample_vec) * -1e37
+        if not self._remove_accidental_hits:
+            mask = mask * 0.
+        pred_sampled = pred_sampled + mask
 
         # subtract log(q)
         expected_count_sampled = F.reshape(expected_count_sampled,
