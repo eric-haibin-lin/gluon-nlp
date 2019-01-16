@@ -147,8 +147,8 @@ else:
         samples, exp_count_true, exp_count_sample = mx.nd.contrib.rand_zipfian(
             true_classes, args.k, ntokens)
         return (samples.astype(_dtype, copy=False),
-                exp_count_sample.astype(_dtype, copy=False) / args.k,
-                exp_count_true.astype(_dtype, copy=False) / args.k)
+                exp_count_sample.astype(_dtype, copy=False),
+                exp_count_true.astype(_dtype, copy=False))
 
 # Given a list of (array, context) pairs, load array[i] on context[i]
 def _load(xs):
