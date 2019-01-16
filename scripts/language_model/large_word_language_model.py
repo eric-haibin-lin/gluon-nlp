@@ -84,6 +84,8 @@ parser.add_argument('--gpus', type=str,
                     help='list of gpus to run, e.g. 0 or 0,2,5. empty means using cpu.')
 parser.add_argument('--log-interval', type=int, default=1000,
                     help='report interval')
+parser.add_argument('--ckpt-interval', type=int, default=1000,
+                    help='checkpoint interval')
 parser.add_argument('--seed', type=int, default=0,
                     help='random seed')
 parser.add_argument('--lr', type=float, default=0.2,
@@ -96,8 +98,9 @@ parser.add_argument('--test-mode', action='store_true',
                     help='Whether to run through the script with few examples')
 parser.add_argument('--eval-only', action='store_true',
                     help='Whether to only run evaluation for the trained model')
-parser.add_argument('--sce', action='store_true',
-                    help='Whether to use SCE')
+parser.add_argument('--sce', action='store_true', help='Whether to use SCE')
+parser.add_argument('--pretrained', action='store_true', help='Whether to load from a pre-trained model')
+
 args = parser.parse_args()
 
 segments = ['train', 'test']
@@ -210,6 +213,14 @@ model = nlp.model.language_model.train.BigRNN(ntokens, args.emsize, args.nhid,
                                               embed_dropout=args.dropout,
                                               encode_dropout=args.dropout,
                                               sce=args.sce)
+if args.pretrained:
+    pretrained_dataset = 'gbw'
+    model_name = 'big_rnn_lm_2048_512'
+    pretrained_model, _ = nlp.model.get_model(model_name, dataset_name=pretrained_dataset,
+                                              pretrained=True)
+    model.load_parameters('/home/ubuntu/.mxnet/models/big_rnn_lm_2048_512_gbw-6bb3e991.params',
+                          ctx=context, allow_missing=True)
+
 loss = gluon.loss.SigmoidBinaryCrossEntropyLoss() if args.sce else gluon.loss.SoftmaxCrossEntropyLoss()
 
 ###############################################################################
@@ -291,6 +302,11 @@ def train():
                 total_L = 0.0
                 start_log_interval_time = time.time()
                 sys.stdout.flush()
+
+            if nbatch % args.ckpt_interval == 0:
+                checkpoint_name = '%s.%s.%s'%(args.save, format(epoch, '02d'), format(nbatch, '09d'))
+                model.save_parameters(checkpoint_name)
+                print('Saving a checkpoint to %s'%checkpoint_name)
 
         end_epoch_time = time.time()
         print('Epoch %d took %.2f seconds.'%(epoch, end_epoch_time - start_epoch_time))
