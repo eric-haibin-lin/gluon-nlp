@@ -100,6 +100,9 @@ parser.add_argument('--eval-only', action='store_true',
                     help='Whether to only run evaluation for the trained model')
 parser.add_argument('--sce', action='store_true', help='Whether to use SCE')
 parser.add_argument('--pretrained', action='store_true', help='Whether to load from a pre-trained model')
+parser.add_argument('--add-prior', action='store_true', help='Whether to add sampler prior to eval_model')
+parser.add_argument('--eval-checkpoint', type=str, default=None, help='evaluate a specific checkpoint')
+parser.add_argument('--no-replacement', action='store_true', help='sample without replacement, change default to with replacement')
 
 args = parser.parse_args()
 
@@ -136,7 +139,16 @@ vocab = train_data_stream.vocab
 ntokens = len(vocab)
 
 # Sampler for generating negative classes during training with importance sampling
-sampler = LogUniformSampler(ntokens, args.k)
+if args.no_replacement:
+    sampler = LogUniformSampler(ntokens, args.k)
+else:
+    def sampler(true_classes, dtype=None):
+        _dtype = np.float32 if dtype is None else dtype
+        samples, exp_count_true, exp_count_sample = mx.nd.contrib.rand_zipfian(
+            true_classes, args.k, ntokens)
+        return (samples.astype(_dtype, copy=False),
+                exp_count_sample.astype(_dtype, copy=False) / args.k,
+                exp_count_true.astype(_dtype, copy=False) / args.k)
 
 # Given a list of (array, context) pairs, load array[i] on context[i]
 def _load(xs):
@@ -218,7 +230,7 @@ if args.pretrained:
     model_name = 'big_rnn_lm_2048_512'
     pretrained_model, _ = nlp.model.get_model(model_name, dataset_name=pretrained_dataset,
                                               pretrained=True)
-    model.load_parameters('/home/ubuntu/.mxnet/models/big_rnn_lm_2048_512_gbw-6bb3e991.params',
+    model.load_parameters('%s/.mxnet/models/big_rnn_lm_2048_512_gbw-6bb3e991.params'%os.environ['HOME'],
                           ctx=context, allow_missing=True)
 
 loss = gluon.loss.SigmoidBinaryCrossEntropyLoss() if args.sce else gluon.loss.SoftmaxCrossEntropyLoss()
@@ -368,20 +380,30 @@ def test(data_stream, batch_size, ctx=None):
             break
     return float(avg.asscalar())
 
-def evaluate():
+def evaluate(eval_checkpoint=None):
     """ Evaluate loop for the trained model """
     print(eval_model)
     eval_model.initialize(mx.init.Xavier(), ctx=context[0])
     eval_model.hybridize(static_alloc=True, static_shape=True)
     epoch = args.from_epoch if args.from_epoch else 0
     while epoch < args.epochs:
-        checkpoint_name = '%s.%s'%(args.save, format(epoch, '02d'))
+        if eval_checkpoint is None:
+            checkpoint_name = '%s.%s'%(args.save, format(epoch, '02d'))
+        else:
+            checkpoint_name = eval_checkpoint
+            epoch = args.epochs
         if not os.path.exists(checkpoint_name):
             print('Wait for a new checkpoint...')
             # check again after 600 seconds
             time.sleep(600)
             continue
-        eval_model.load_parameters(checkpoint_name)
+        eval_model.load_parameters(checkpoint_name, ignore_extra=True)
+        if args.add_prior:
+            eval_model.decoder.bias.set_data(
+                eval_model.decoder.bias.data() +
+                sampler(mx.nd.arange(ntokens))[-1]
+                .as_in_context(context[0]).log()
+            )
         print('Loaded parameters from checkpoint %s'%(checkpoint_name))
         start_epoch_time = time.time()
         final_test_L = test(test_data, test_batch_size, ctx=context[0])
@@ -394,6 +416,6 @@ def evaluate():
 
 if __name__ == '__main__':
     if args.eval_only:
-        evaluate()
+        evaluate(args.eval_checkpoint)
     else:
         train()
