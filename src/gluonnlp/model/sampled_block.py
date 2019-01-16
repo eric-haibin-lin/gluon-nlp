@@ -103,7 +103,7 @@ class _SampledDenseHelper(HybridBlock):
             label_vec = F.reshape(label, (-1, 1))
             new_label_sampled = F.zeros_like(pred_sampled)
             new_label_true = F.ones_like(label_vec)
-            new_label = F.Concat(new_label_sampled, new_label_true, dim=1)
+            new_label = F.Concat(new_label_true, new_label_sampled, dim=1)
         return pred, new_label
 
     def __repr__(self):
@@ -491,6 +491,8 @@ class _SparseSampledDense(Block):
         # (num_sampled+batch_size,)
         b_all = nd.take(bias, indices=ids)
         out, new_targets = self._dense(x, sampled_values, label, w_all, b_all)
+        # import pdb
+        # pdb.set_trace()
         return out, new_targets
 
     def __repr__(self):

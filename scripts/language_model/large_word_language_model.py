@@ -84,6 +84,8 @@ parser.add_argument('--gpus', type=str,
                     help='list of gpus to run, e.g. 0 or 0,2,5. empty means using cpu.')
 parser.add_argument('--log-interval', type=int, default=1000,
                     help='report interval')
+parser.add_argument('--ckpt-interval', type=int, default=1000,
+                    help='checkpoint interval')
 parser.add_argument('--seed', type=int, default=0,
                     help='random seed')
 parser.add_argument('--lr', type=float, default=0.2,
@@ -96,8 +98,12 @@ parser.add_argument('--test-mode', action='store_true',
                     help='Whether to run through the script with few examples')
 parser.add_argument('--eval-only', action='store_true',
                     help='Whether to only run evaluation for the trained model')
-parser.add_argument('--sce', action='store_true',
-                    help='Whether to use SCE')
+parser.add_argument('--sce', action='store_true', help='Whether to use SCE')
+parser.add_argument('--pretrained', action='store_true', help='Whether to load from a pre-trained model')
+parser.add_argument('--add-prior', action='store_true', help='Whether to add sampler prior to eval_model')
+parser.add_argument('--eval-checkpoint', type=str, default=None, help='evaluate a specific checkpoint')
+parser.add_argument('--no-replacement', action='store_true', help='sample without replacement, change default to with replacement')
+
 args = parser.parse_args()
 
 segments = ['train', 'test']
@@ -133,7 +139,16 @@ vocab = train_data_stream.vocab
 ntokens = len(vocab)
 
 # Sampler for generating negative classes during training with importance sampling
-sampler = LogUniformSampler(ntokens, args.k)
+if args.no_replacement:
+    sampler = LogUniformSampler(ntokens, args.k)
+else:
+    def sampler(true_classes, dtype=None):
+        _dtype = np.float32 if dtype is None else dtype
+        samples, exp_count_true, exp_count_sample = mx.nd.contrib.rand_zipfian(
+            true_classes, args.k, ntokens)
+        return (samples.astype(_dtype, copy=False),
+                exp_count_sample.astype(_dtype, copy=False) / args.k,
+                exp_count_true.astype(_dtype, copy=False) / args.k)
 
 # Given a list of (array, context) pairs, load array[i] on context[i]
 def _load(xs):
@@ -210,6 +225,14 @@ model = nlp.model.language_model.train.BigRNN(ntokens, args.emsize, args.nhid,
                                               embed_dropout=args.dropout,
                                               encode_dropout=args.dropout,
                                               sce=args.sce)
+if args.pretrained:
+    pretrained_dataset = 'gbw'
+    model_name = 'big_rnn_lm_2048_512'
+    pretrained_model, _ = nlp.model.get_model(model_name, dataset_name=pretrained_dataset,
+                                              pretrained=True)
+    model.load_parameters('%s/.mxnet/models/big_rnn_lm_2048_512_gbw-6bb3e991.params'%os.environ['HOME'],
+                          ctx=context, allow_missing=True)
+
 loss = gluon.loss.SigmoidBinaryCrossEntropyLoss() if args.sce else gluon.loss.SoftmaxCrossEntropyLoss()
 
 ###############################################################################
@@ -292,6 +315,11 @@ def train():
                 start_log_interval_time = time.time()
                 sys.stdout.flush()
 
+            if nbatch % args.ckpt_interval == 0:
+                checkpoint_name = '%s.%s.%s'%(args.save, format(epoch, '02d'), format(nbatch, '09d'))
+                model.save_parameters(checkpoint_name)
+                print('Saving a checkpoint to %s'%checkpoint_name)
+
         end_epoch_time = time.time()
         print('Epoch %d took %.2f seconds.'%(epoch, end_epoch_time - start_epoch_time))
         mx.nd.waitall()
@@ -352,20 +380,30 @@ def test(data_stream, batch_size, ctx=None):
             break
     return float(avg.asscalar())
 
-def evaluate():
+def evaluate(eval_checkpoint=None):
     """ Evaluate loop for the trained model """
     print(eval_model)
     eval_model.initialize(mx.init.Xavier(), ctx=context[0])
     eval_model.hybridize(static_alloc=True, static_shape=True)
     epoch = args.from_epoch if args.from_epoch else 0
     while epoch < args.epochs:
-        checkpoint_name = '%s.%s'%(args.save, format(epoch, '02d'))
+        if eval_checkpoint is None:
+            checkpoint_name = '%s.%s'%(args.save, format(epoch, '02d'))
+        else:
+            checkpoint_name = eval_checkpoint
+            epoch = args.epochs
         if not os.path.exists(checkpoint_name):
             print('Wait for a new checkpoint...')
             # check again after 600 seconds
             time.sleep(600)
             continue
-        eval_model.load_parameters(checkpoint_name)
+        eval_model.load_parameters(checkpoint_name, ignore_extra=True)
+        if args.add_prior:
+            eval_model.decoder.bias.set_data(
+                eval_model.decoder.bias.data() +
+                sampler(mx.nd.arange(ntokens))[-1]
+                .as_in_context(context[0]).log()
+            )
         print('Loaded parameters from checkpoint %s'%(checkpoint_name))
         start_epoch_time = time.time()
         final_test_L = test(test_data, test_batch_size, ctx=context[0])
@@ -378,6 +416,6 @@ def evaluate():
 
 if __name__ == '__main__':
     if args.eval_only:
-        evaluate()
+        evaluate(args.eval_checkpoint)
     else:
         train()
