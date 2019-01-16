@@ -364,7 +364,7 @@ class ISDense(_SampledDense):
         - **new_targets**: A tensor of shape `(batch_size,)`.
           The new target classes.
     """
-    def __init__(self, num_classes, num_sampled, in_unit, remove_accidental_hits=True,
+    def __init__(self, num_classes, num_sampled, in_unit, remove_accidental_hits=False,
                  dtype='float32', weight_initializer=None, bias_initializer='zeros',
                  sparse_grad=True, prefix=None, params=None):
         super(ISDense, self).__init__(num_classes, num_sampled, in_unit, remove_accidental_hits,
@@ -581,7 +581,7 @@ class SparseISDense(_SparseSampledDense):
           The new target classes.
 
     """
-    def __init__(self, num_classes, num_sampled, in_unit, remove_accidental_hits=True,
+    def __init__(self, num_classes, num_sampled, in_unit, remove_accidental_hits=False,
                  dtype='float32', weight_initializer=None, bias_initializer='zeros',
                  prefix=None, params=None):
         super(SparseISDense, self).__init__(num_classes, num_sampled, in_unit,
@@ -673,7 +673,7 @@ class SparseNCEDense(_SparseSampledDense):
           The new target classes.
 
     """
-    def __init__(self, num_classes, num_sampled, in_unit, remove_accidental_hits=True,
+    def __init__(self, num_classes, num_sampled, in_unit, remove_accidental_hits=False,
                  dtype='float32', weight_initializer=None, bias_initializer='zeros',
                  prefix=None, params=None):
         super(SparseNCEDense, self).__init__(num_classes, num_sampled, in_unit,
@@ -724,7 +724,7 @@ class SparseSCE(_SparseSampledDense):
           The new target classes.
 
     """
-    def __init__(self, num_classes, num_sampled, in_unit, remove_accidental_hits=True,
+    def __init__(self, num_classes, num_sampled, in_unit, remove_accidental_hits=False,
                  dtype='float32', weight_initializer=None, bias_initializer='zeros',
                  prefix=None, params=None):
         super(SparseSCE, self).__init__(num_classes, num_sampled, in_unit,

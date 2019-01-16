@@ -378,17 +378,17 @@ class BigRNN(Block):
         if self._sce:
            assert self._sparse_weight
            block = SparseSCE(self._vocab_size, self._num_sampled,
-                             self._projection_size, remove_accidental_hits=True,
+                             self._projection_size, remove_accidental_hits=False,
                              prefix=prefix)
         else:
             if self._sparse_weight:
                 # sparse IS Dense has both sparse weight and sparse grad
                 block = SparseISDense(self._vocab_size, self._num_sampled,
-                                      self._projection_size, remove_accidental_hits=True,
+                                      self._projection_size, remove_accidental_hits=False,
                                       prefix=prefix)
             else:
                 block = ISDense(self._vocab_size, self._num_sampled,
-                                self._projection_size, remove_accidental_hits=True,
+                                self._projection_size, remove_accidental_hits=False,
                             prefix=prefix, sparse_grad=self._sparse_grad)
         return block
 
