@@ -307,7 +307,7 @@ def train():
             if nbatch % args.log_interval == 0:
                 cur_L = total_L / args.log_interval / len(context)
                 ppl = math.exp(cur_L) if cur_L < 100 else float('inf')
-                print('[Epoch %d Batch %d] loss %.2f, ppl %.2f, '
+                print('[Epoch %d Batch %d] loss %.9f, ppl %.9f, '
                       'throughput %.2f samples/s'
                       %(epoch, nbatch, cur_L, ppl,
                         train_batch_size*args.log_interval/(time.time()-start_log_interval_time)))
@@ -372,7 +372,7 @@ def test(data_stream, batch_size, ctx=None):
             avg_scalar = float(avg.asscalar())
             ppl = math.exp(avg_scalar)
             throughput = batch_size*args.log_interval/(time.time()-start_time)
-            print('Evaluation batch %d: test loss %.2f, test ppl %.2f, '
+            print('Evaluation batch %d: test loss %.9f, test ppl %.9f, '
                   'throughput = %.2f samples/s'%(nbatch, avg_scalar, ppl, throughput))
             start_time = time.time()
         if max_nbatch_eval and nbatch > max_nbatch_eval:
