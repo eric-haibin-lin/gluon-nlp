@@ -30,6 +30,12 @@ class SoftmaxCEMaskedLoss(SoftmaxCELoss):
     """Wrapper of the SoftmaxCELoss that supports valid_length as the input
 
     """
+    def __init__(self, axis=-1, sparse_label=True, from_logits=False, weight=None,
+                 batch_axis=0, **kwargs):
+        super(SoftmaxCEMaskedLoss, self).__init__(axis=axis, sparse_label=sparse_label,
+            from_logits=from_logits, weight=weight, batch_axis=batch_axis, **kwargs)
+        self._dtype = 'float32'
+
     def hybrid_forward(self, F, pred, label, valid_length): # pylint: disable=arguments-differ
         """
 
@@ -48,7 +54,7 @@ class SoftmaxCEMaskedLoss(SoftmaxCELoss):
             Shape (batch_size,)
         """
         if self._sparse_label:
-            sample_weight = F.cast(F.expand_dims(F.ones_like(label), axis=-1), dtype=np.float32)
+            sample_weight = F.cast(F.expand_dims(F.ones_like(label), axis=-1), dtype=self._dtype)
         else:
             sample_weight = F.ones_like(label)
         sample_weight = F.SequenceMask(sample_weight,
@@ -56,6 +62,10 @@ class SoftmaxCEMaskedLoss(SoftmaxCELoss):
                                        use_sequence_length=True,
                                        axis=1)
         return super(SoftmaxCEMaskedLoss, self).hybrid_forward(F, pred, label, sample_weight)
+
+    def cast(self, dtype):
+        self._dtype = dtype
+        super(SoftmaxCEMaskedLoss, self).cast(dtype)
 
 # pylint: disable=unused-argument
 class _SmoothingWithDim(mx.operator.CustomOp):
