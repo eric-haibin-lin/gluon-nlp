@@ -49,6 +49,22 @@ class BERTLayerNorm(nn.LayerNorm):
         super(BERTLayerNorm, self).__init__(epsilon=epsilon, in_channels=in_channels,
                                             prefix=prefix, params=params)
 
+    #def cast(self, dtype):
+    #    dtype = 'float32'
+    #    super(BERTLayerNorm, self).cast(dtype)
+
+    def hybrid_forward(self, F, data, gamma, beta):
+        import numpy as np
+        dtype = data.dtype
+        if dtype == np.float16:
+            data = data.astype('float32')
+            gamma = gamma.astype('float32')
+            beta = beta.astype('float32')
+        norm_data = F.LayerNorm(data, gamma=gamma, beta=beta, axis=self._axis, eps=self._epsilon)
+        if dtype == np.float16:
+            norm_data = norm_data.astype('float16')
+        return norm_data
+
 
 class BERTPositionwiseFFN(BasePositionwiseFFN):
     """Structure of the Positionwise Feed-Forward Neural Network for

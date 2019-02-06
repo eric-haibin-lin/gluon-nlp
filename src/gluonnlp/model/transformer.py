@@ -999,7 +999,7 @@ class TransformerDecoder(HybridBlock, Seq2SeqDecoder):
                 .broadcast_axes(axis=1, size=step_input.shape[1])
             states[-1] = augmented_mem_mask
         if mask is None:
-            length_array = mx.nd.arange(step_input.shape[1], ctx=step_input.context)
+            length_array = mx.nd.arange(step_input.shape[1], ctx=step_input.context, dtype=step_input.dtype)
             mask = mx.nd.broadcast_lesser_equal(
                 length_array.reshape((1, -1)),
                 length_array.reshape((-1, 1)))
