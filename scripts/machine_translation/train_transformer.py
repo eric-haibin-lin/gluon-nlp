@@ -48,6 +48,7 @@ import gluonnlp as nlp
 from gluonnlp.model.translation import NMTModel
 from gluonnlp.model.transformer import get_transformer_encoder_decoder, ParallelTransformer
 from gluonnlp.utils.parallel import Parallel
+from gluonnlp.optimizer.utils import FP16Trainer
 from translation import BeamSearchTranslator
 from loss import SoftmaxCEMaskedLoss, LabelSmoothing
 from utils import logging_config
@@ -119,6 +120,8 @@ parser.add_argument('--full', action='store_true',
                          ' http://statmt.org/wmt14/test-filtered.tgz.'
                          ' When the option full is turned on, we use the test dataset in'
                          ' http://statmt.org/wmt14/test-full.tgz')
+parser.add_argument('--fp16', action='store_true', help='use fp16')
+parser.add_argument('--hybrid', action='store_true', help='apply hybridization')
 parser.add_argument('--bleu', type=str, default='tweaked',
                     help='Schemes for computing bleu score. It can be: '
                     '"tweaked": it uses similar steps in get_ende_bleu.sh in tensor2tensor '
@@ -184,23 +187,30 @@ model = NMTModel(src_vocab=src_vocab, tgt_vocab=tgt_vocab, encoder=encoder, deco
                  tie_weights=args.dataset != 'TOY', embed_initializer=None, prefix='transformer_')
 model.initialize(init=mx.init.Xavier(magnitude=args.magnitude), ctx=ctx)
 static_alloc = True
-model.hybridize(static_alloc=static_alloc)
-logging.info(model)
+#logging.info(model)
 
 translator = BeamSearchTranslator(model=model, beam_size=args.beam_size,
                                   scorer=nlp.model.BeamSearchScorer(alpha=args.lp_alpha,
                                                                     K=args.lp_k),
                                   max_length=200)
-logging.info('Use beam_size={}, alpha={}, K={}'.format(args.beam_size, args.lp_alpha, args.lp_k))
+#logging.info('Use beam_size={}, alpha={}, K={}'.format(args.beam_size, args.lp_alpha, args.lp_k))
 
-label_smoothing = LabelSmoothing(epsilon=args.epsilon, units=len(tgt_vocab))
-label_smoothing.hybridize(static_alloc=static_alloc)
+label_smoothing = LabelSmoothing(epsilon=args.epsilon, units=len(tgt_vocab), dtype='float16' if args.fp16 else 'float32')
 
 loss_function = SoftmaxCEMaskedLoss(sparse_label=False)
-loss_function.hybridize(static_alloc=static_alloc)
-
 test_loss_function = SoftmaxCEMaskedLoss()
-test_loss_function.hybridize(static_alloc=static_alloc)
+
+if args.hybrid:
+    model.hybridize(static_alloc=static_alloc)
+    loss_function.hybridize(static_alloc=static_alloc)
+    label_smoothing.hybridize(static_alloc=static_alloc)
+    test_loss_function.hybridize(static_alloc=static_alloc)
+
+if args.fp16:
+    model.cast('float16')
+    loss_function.cast('float16')
+    label_smoothing.cast('float16')
+    test_loss_function.cast('float16')
 
 rescale_loss = 100
 parallel_model = ParallelTransformer(model, label_smoothing, loss_function, rescale_loss)
@@ -262,11 +272,15 @@ def evaluate(data_loader, context=ctx[0]):
 def train():
     """Training function."""
     trainer = gluon.Trainer(model.collect_params(), args.optimizer,
-                            {'learning_rate': args.lr, 'beta2': 0.98, 'epsilon': 1e-9})
+                            {'learning_rate': args.lr, 'beta2': 0.98, 'epsilon': 1e-9},
+                            update_on_kvstore=False)
+    if args.fp16:
+        trainer = FP16Trainer(trainer)
 
     train_data_loader, val_data_loader, test_data_loader \
         = dataprocessor.make_dataloader(data_train, data_val, data_test, args,
-                                        use_average_length=True, num_shards=len(ctx))
+                                        use_average_length=True, num_shards=len(ctx),
+                                        dtype='float16' if args.fp16 else 'float32')
 
     if args.bleu == 'tweaked':
         bpe = bool(args.dataset != 'IWSLT2015' and args.dataset != 'TOY')
@@ -287,7 +301,9 @@ def train():
     average_start = (len(train_data_loader) // grad_interval) * (args.epochs - args.average_start)
     average_param_dict = None
     model.collect_params().zero_grad()
-    parallel = Parallel(num_ctxs, parallel_model)
+
+    parallel_model.register_trainer(trainer)
+    parallel = Parallel(num_ctxs if num_ctxs > 1 else 0, parallel_model)
     for epoch_id in range(args.epochs):
         log_avg_loss = 0
         log_wc = 0
@@ -300,7 +316,7 @@ def train():
                 step_num += 1
                 new_lr = args.lr / math.sqrt(args.num_units) \
                          * min(1. / math.sqrt(step_num), step_num * warmup_steps ** (-1.5))
-                trainer.set_learning_rate(new_lr)
+                trainer.fp32_trainer.set_learning_rate(new_lr)
             src_wc, tgt_wc, bs = np.sum([(shard[2].sum(), shard[3].sum(), shard[0].shape[0])
                                          for shard in seqs], axis=0)
             seqs = [[seq.as_in_context(context) for seq in shard]
@@ -309,6 +325,7 @@ def train():
             for seq in seqs:
                 parallel.put((seq, args.batch_size))
             Ls = [parallel.get() for _ in range(len(ctx))]
+            print('loss=',Ls)
             src_wc = src_wc.asscalar()
             tgt_wc = tgt_wc.asscalar()
             loss_denom += tgt_wc - bs

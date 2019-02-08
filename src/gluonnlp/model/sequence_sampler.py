@@ -319,7 +319,8 @@ class _BeamSearchStepUpdate(HybridBlock):
             Inner NDArrays have shape (batch_size * beam_size, ...)
         """
         beam_size = self._beam_size
-        beam_alive_mask_bcast = F.expand_dims(beam_alive_mask, axis=2).astype(np.float32)
+        # TODo cannot be hybiridized
+        beam_alive_mask_bcast = F.expand_dims(beam_alive_mask, axis=2).astype(outputs.dtype)
         candidate_scores = self._scorer(outputs.reshape(shape=(-4, -1, beam_size, 0)),
                                         scores, step)
         # Concat the candidate scores and the scores of the finished beams
@@ -332,7 +333,9 @@ class _BeamSearchStepUpdate(HybridBlock):
         candidate_scores = F.concat(candidate_scores.reshape(shape=(0, -1)),
                                     finished_scores, dim=1)
         # Get the top K scores
+        candidate_scores = candidate_scores.astype('float32')
         new_scores, indices = F.topk(candidate_scores, axis=1, k=beam_size, ret_typ='both')
+        new_scores = new_scores.astype(finished_scores.dtype)
         indices = indices.astype(np.int32)
         use_prev = F.broadcast_greater_equal(indices, beam_size * vocab_size)
         chosen_word_ids = F.broadcast_mod(indices, vocab_size)
@@ -483,7 +486,7 @@ class BeamSearchSampler(object):
             state_info = None
         self._updater = _BeamSearchStepUpdate(beam_size=beam_size, eos_id=eos_id, scorer=scorer,
                                               state_info=state_info)
-        self._updater.hybridize()
+        #self._updater.hybridize()
 
     def __call__(self, inputs, states):
         """Sample by beam search.
@@ -522,7 +525,7 @@ class BeamSearchSampler(object):
         # Valid length is initialized to be 1
         beam_alive_mask = mx.nd.ones(shape=(batch_size, beam_size), ctx=ctx, dtype=np.int32)
         valid_length = mx.nd.ones(shape=(batch_size, beam_size), ctx=ctx, dtype=np.int32)
-        scores = mx.nd.zeros(shape=(batch_size, beam_size), ctx=ctx)
+        scores = mx.nd.zeros(shape=(batch_size, beam_size), ctx=ctx, dtype=np.float16)
         if beam_size > 1:
             scores[:, 1:beam_size] = LARGE_NEGATIVE_FLOAT
         samples = step_input.reshape((batch_size, beam_size, 1))
@@ -531,7 +534,7 @@ class BeamSearchSampler(object):
             vocab_size_nd = mx.nd.array([log_probs.shape[1]], ctx=ctx, dtype=np.int32)
             batch_shift_nd = mx.nd.arange(0, batch_size * beam_size, beam_size, ctx=ctx,
                                           dtype=np.int32)
-            step_nd = mx.nd.array([i + 1], ctx=ctx)
+            step_nd = mx.nd.array([i + 1], ctx=ctx, dtype=np.float16)
             samples, valid_length, scores, chosen_word_ids, beam_alive_mask, states = \
                 self._updater(samples, valid_length, log_probs, scores, step_nd, beam_alive_mask,
                               new_states, vocab_size_nd, batch_shift_nd)
@@ -653,7 +656,7 @@ class HybridBeamSearchSampler(HybridBlock):
             step = i + 1
             new_samples, new_valid_length, new_scores, \
                 chosen_word_ids, new_beam_alive_mask, new_new_states = \
-                self._updater(samples, valid_length, outputs, scores, step.astype(np.float32),
+                self._updater(samples, valid_length, outputs, scores, step.astype(outputs.dtype),
                               beam_alive_mask,
                               _extract_and_flatten_nested_structure(new_states)[-1],
                               vocab_size, batch_shift)
