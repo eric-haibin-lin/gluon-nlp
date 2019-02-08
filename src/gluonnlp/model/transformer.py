@@ -1230,10 +1230,6 @@ class ParallelTransformer(Parallelizable):
         self._label_smoothing = label_smoothing
         self._loss = loss_function
         self._rescale_loss = rescale_loss
-        self._trainer = None
-
-    def register_trainer(self, trainer):
-        self._trainer = trainer
 
     def forward_backward(self, x):
         """Perform forward and backward computation for a batch of src seq and dst seq"""
@@ -1244,8 +1240,5 @@ class ParallelTransformer(Parallelizable):
             smoothed_label = self._label_smoothing(tgt_seq[:, 1:])
             ls = self._loss(out, smoothed_label, tgt_valid_length - 1).sum()
             ls = (ls * (tgt_seq.shape[1] - 1)) / batch_size / self._rescale_loss
-        if self._trainer:
-           self._trainer.backward(ls)
-        else:
-            ls.backward()
+        ls.backward()
         return ls

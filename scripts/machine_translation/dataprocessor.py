@@ -86,11 +86,11 @@ class TrainValDataTransform(object):
         self._tgt_max_len = tgt_max_len
 
     def __call__(self, src, tgt):
-        if self._src_max_len >= 0:
+        if self._src_max_len:
             src_sentence = self._src_vocab[src.split()[:self._src_max_len]]
         else:
             src_sentence = self._src_vocab[src.split()]
-        if self._tgt_max_len >= 0:
+        if self._tgt_max_len:
             tgt_sentence = self._tgt_vocab[tgt.split()[:self._tgt_max_len]]
         else:
             tgt_sentence = self._tgt_vocab[tgt.split()]
@@ -198,15 +198,15 @@ def get_data_lengths(dataset):
 
 
 def make_dataloader(data_train, data_val, data_test, args,
-                    use_average_length=False, num_shards=0, num_workers=8, dtype='float32'):
+                    use_average_length=False, num_shards=0, num_workers=8):
     """Create data loaders for training/validation/test."""
     data_train_lengths = get_data_lengths(data_train)
     data_val_lengths = get_data_lengths(data_val)
     data_test_lengths = get_data_lengths(data_test)
-    train_batchify_fn = btf.Tuple(btf.Pad(dtype=dtype), btf.Pad(dtype=dtype),
-                                  btf.Stack(dtype=dtype), btf.Stack(dtype=dtype))
-    test_batchify_fn = btf.Tuple(btf.Pad(dtype=dtype), btf.Pad(dtype=dtype),
-                                 btf.Stack(dtype=dtype), btf.Stack(dtype=dtype),
+    train_batchify_fn = btf.Tuple(btf.Pad(), btf.Pad(),
+                                  btf.Stack(dtype='float32'), btf.Stack(dtype='float32'))
+    test_batchify_fn = btf.Tuple(btf.Pad(), btf.Pad(),
+                                 btf.Stack(dtype='float32'), btf.Stack(dtype='float32'),
                                  btf.Stack())
     target_val_lengths = list(map(lambda x: x[-1], data_val_lengths))
     target_test_lengths = list(map(lambda x: x[-1], data_test_lengths))
