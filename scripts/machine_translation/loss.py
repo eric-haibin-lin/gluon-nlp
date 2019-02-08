@@ -30,12 +30,6 @@ class SoftmaxCEMaskedLoss(SoftmaxCELoss):
     """Wrapper of the SoftmaxCELoss that supports valid_length as the input
 
     """
-    def __init__(self, axis=-1, sparse_label=True, from_logits=False, weight=None,
-                 batch_axis=0, **kwargs):
-        super(SoftmaxCEMaskedLoss, self).__init__(axis=axis, sparse_label=sparse_label,
-            from_logits=from_logits, weight=weight, batch_axis=batch_axis, **kwargs)
-        self._dtype = 'float32'
-
     def hybrid_forward(self, F, pred, label, valid_length): # pylint: disable=arguments-differ
         """
 
@@ -54,7 +48,7 @@ class SoftmaxCEMaskedLoss(SoftmaxCELoss):
             Shape (batch_size,)
         """
         if self._sparse_label:
-            sample_weight = F.cast(F.expand_dims(F.ones_like(label), axis=-1), dtype=self._dtype)
+            sample_weight = F.cast(F.expand_dims(F.ones_like(label), axis=-1), dtype=np.float32)
         else:
             sample_weight = F.ones_like(label)
         sample_weight = F.SequenceMask(sample_weight,
@@ -62,10 +56,6 @@ class SoftmaxCEMaskedLoss(SoftmaxCELoss):
                                        use_sequence_length=True,
                                        axis=1)
         return super(SoftmaxCEMaskedLoss, self).hybrid_forward(F, pred, label, sample_weight)
-
-    def cast(self, dtype):
-        self._dtype = dtype
-        super(SoftmaxCEMaskedLoss, self).cast(dtype)
 
 # pylint: disable=unused-argument
 class _SmoothingWithDim(mx.operator.CustomOp):
@@ -131,13 +121,12 @@ class LabelSmoothing(HybridBlock):
         Created if `None`.
     """
     def __init__(self, axis=-1, epsilon=0.1, units=None,
-                 sparse_label=True, dtype='float32', prefix=None, params=None):
+                 sparse_label=True, prefix=None, params=None):
         super(LabelSmoothing, self).__init__(prefix=prefix, params=params)
         self._axis = axis
         self._epsilon = epsilon
         self._sparse_label = sparse_label
         self._units = units
-        self._dtype = dtype
 
     def hybrid_forward(self, F, inputs, units=None): # pylint: disable=arguments-differ
         """
@@ -159,7 +148,7 @@ class LabelSmoothing(HybridBlock):
                 'instance initialization when sparse_label is False'
             if units is None:
                 units = self._units
-            inputs = F.one_hot(inputs, depth=units, dtype=self._dtype)
+            inputs = F.one_hot(inputs, depth=units)
         if units is None and self._units is None:
             return F.Custom(inputs, epsilon=self._epsilon, axis=self._axis,
                             op_type='_smoothing_with_dim')
