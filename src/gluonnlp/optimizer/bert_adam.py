@@ -64,8 +64,9 @@ class BERTAdam(Optimizer):
 
     def create_state(self, index, weight): # pylint: disable=unused-argument
         """Initialization for mean and var."""
-        return (zeros(weight.shape, weight.context, dtype=weight.dtype), #mean
-                zeros(weight.shape, weight.context, dtype=weight.dtype)) #variance
+        return (zeros(weight.shape, weight.context),#, dtype=weight.dtype), #mean
+                zeros(weight.shape, weight.context),#, dtype=weight.dtype)) #variance
+                weight.astype('float32'))
 
     def update(self, index, weight, grad, state):
         """Update method."""
@@ -86,5 +87,7 @@ class BERTAdam(Optimizer):
         if self.clip_gradient:
             kwargs['clip_gradient'] = self.clip_gradient
 
-        mean, var = state
-        adamw_update(weight, grad, mean, var, out=weight, lr=1, wd=wd, eta=lr, **kwargs)
+        mean, var, weight_fp32 = state
+
+        adamw_update(weight_fp32, grad.astype('float32'), mean, var, out=weight_fp32, lr=1, wd=wd, eta=lr, **kwargs)
+        weight_fp32.copyto(weight)

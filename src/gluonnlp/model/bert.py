@@ -48,21 +48,20 @@ class BERTLayerNorm(nn.LayerNorm):
     def __init__(self, epsilon=1e-12, in_channels=0, prefix=None, params=None):
         super(BERTLayerNorm, self).__init__(epsilon=epsilon, in_channels=in_channels,
                                             prefix=prefix, params=params)
+        self._dtype = None
 
-    #def cast(self, dtype):
-    #    dtype = 'float32'
-    #    super(BERTLayerNorm, self).cast(dtype)
+    def cast(self, dtype):
+        self._dtype = dtype
+        super(BERTLayerNorm, self).cast('float32')
 
     def hybrid_forward(self, F, data, gamma, beta):
-        import numpy as np
-        dtype = data.dtype
-        if dtype == np.float16:
-            data = data.astype('float32')
-            gamma = gamma.astype('float32')
-            beta = beta.astype('float32')
+        if self._dtype:
+            data = data.astype(self._dtype)
+            gamma = gamma.astype(self._dtype)
+            beta = beta.astype(self._dtype)
         norm_data = F.LayerNorm(data, gamma=gamma, beta=beta, axis=self._axis, eps=self._epsilon)
-        if dtype == np.float16:
-            norm_data = norm_data.astype('float16')
+        if self._dtype:
+            norm_data = norm_data.astype(self._dtype)
         return norm_data
 
 

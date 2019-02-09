@@ -160,9 +160,8 @@ def evaluate():
     for i, seqs in enumerate(dev_data):
         Ls = []
         input_ids, valid_len, type_ids, label = seqs
-        out = model(input_ids.as_in_context(ctx).astype(dtype, copy=False), type_ids.as_in_context(ctx).astype(dtype, copy=False),
+        out = model(input_ids.as_in_context(ctx), type_ids.as_in_context(ctx),
                     valid_len.astype(dtype).as_in_context(ctx))
-        print(i, out)
         metric.update([label], [out])
     logging.info('Validation accuracy: {:.3f}'.format(metric.get()[1]))
     if args.profile:
@@ -201,19 +200,26 @@ def train():
         for p in params:
             p.grad_req = 'add'
 
-    if args.fp16:
-        model.cast(dtype)
-
     if args.eval:
-        model.load_parameters('pretrained.params', ctx=ctx)
+        #model.load_parameters('pretrained.params', ctx=ctx)
+        if args.fp16:
+            model.cast(dtype)
         evaluate()
         exit()
+
+    if args.fp16:
+        model.cast(dtype)
 
     for epoch_id in range(args.epochs):
         metric.reset()
         step_loss = 0
         tic = time.time()
         for batch_id, seqs in enumerate(train_data):
+            if args.profile and batch_id == 2:
+                mx.nd.waitall()
+                mx.profiler.set_config(profile_all=True, aggregate_stats=True)
+                mx.profiler.set_state('run')
+
             # set grad to zero for gradient accumulation
             if accumulate:
                 if batch_id % accumulate == 0:
@@ -232,8 +238,8 @@ def train():
             with mx.autograd.record():
                 input_ids, valid_length, type_ids, label = seqs
                 valid_length = valid_length.astype(dtype)
-                type_ids = type_ids.astype(dtype)
-                label = label.astype(dtype)
+                type_ids = type_ids.astype('float32')
+                label = label.astype('float32')
                 out = model(input_ids.as_in_context(ctx), type_ids.as_in_context(ctx),
                             valid_length.as_in_context(ctx))
                 ls = loss_function(out.astype('float32'), label.as_in_context(ctx).astype('float32')).mean()
@@ -258,7 +264,12 @@ def train():
                                      step_loss / log_interval,
                                      trainer.learning_rate, metric.get()[1]))
                 step_loss = 0
-        mx.nd.waitall()
+
+                if args.profile:
+                    mx.nd.waitall()
+                    mx.profiler.set_state('stop')
+                    print(mx.profiler.dumps())
+                    exit()
         model.save_parameters('ckpt.params')
         evaluate()
         toc = time.time()
