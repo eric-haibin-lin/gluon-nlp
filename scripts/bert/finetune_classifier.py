@@ -172,6 +172,8 @@ def evaluate():
 def train():
     """Training function."""
     optimizer_params = {'learning_rate': lr, 'epsilon': 1e-6, 'wd': 0.01}
+    if args.fp16:
+        optimizer_params['multi_precision'] = True
     try:
         trainer = gluon.Trainer(model.collect_params(), args.optimizer,
                                 optimizer_params, update_on_kvstore=False)
