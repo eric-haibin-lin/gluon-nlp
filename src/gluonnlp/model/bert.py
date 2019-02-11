@@ -56,9 +56,9 @@ class BERTLayerNorm(nn.LayerNorm):
 
     def hybrid_forward(self, F, data, gamma, beta):
         if self._dtype:
-            data = data.astype(self._dtype)
-            gamma = gamma.astype(self._dtype)
-            beta = beta.astype(self._dtype)
+            data = data.astype('float32')
+            gamma = gamma.astype('float32')
+            beta = beta.astype('float32')
         norm_data = F.LayerNorm(data, gamma=gamma, beta=beta, axis=self._axis, eps=self._epsilon)
         if self._dtype:
             norm_data = norm_data.astype(self._dtype)
