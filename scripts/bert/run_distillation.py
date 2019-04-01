@@ -46,11 +46,12 @@ from mxnet.gluon.data import DataLoader
 import gluonnlp as nlp
 from gluonnlp.utils import Parallelizable, Parallel
 from gluonnlp.metric import MaskedAccuracy
-from gluonnlp.model import bert_12_768_12
+from gluonnlp.model import bert_12_768_12, bert_24_1024_16
 from gluonnlp.data.batchify import Tuple, Stack, Pad
 from gluonnlp.data import SimpleDatasetStream, FixedBucketSampler, NumpyDataset, BERTTokenizer
 from utils import profile
 from fp16_utils import FP16Trainer
+from loss import DistillationSoftmaxCrossEntropyLoss
 
 parser = argparse.ArgumentParser(description='BERT pretraining example.')
 parser.add_argument('--num_steps', type=int, default=20, help='Number of optimization steps')
@@ -86,6 +87,11 @@ parser.add_argument('--verbose', action='store_true', help='verbose logging')
 parser.add_argument('--profile', action='store_true', help='profile the program')
 parser.add_argument('--by-token', action='store_true',
                     help='set batch size by the number of tokens in the batch')
+parser.add_argument('--temperature', type=float, default=20,
+                    help='temperature parameter for distillation teacher model')
+parser.add_argument('--hard_weight', type=float, default=0.5,
+                    help='weight for the loss of one-hot label for distillation training')
+
 args = parser.parse_args()
 
 os.environ['MXNET_KVSTORE_USETREE'] = '1'
@@ -102,6 +108,7 @@ def get_model(ctx):
     dataset = args.dataset_name
     model, vocabulary = bert_12_768_12(dataset_name=dataset,
                                        pretrained=pretrained, ctx=ctx)
+    teacher, _ = bert_24_1024_16(dataset_name=dataset, pretrained=True, ctx=ctx)
     if not pretrained:
         model.initialize(init=mx.init.Normal(0.02), ctx=ctx)
 
@@ -112,14 +119,19 @@ def get_model(ctx):
 
     model.cast(args.dtype)
     model.hybridize(static_alloc=True)
+    teacher.cast(args.dtype)
+    teacher.hybridize(static_alloc=True)
 
     # losses
     nsp_loss = gluon.loss.SoftmaxCELoss()
     mlm_loss = gluon.loss.SoftmaxCELoss()
+    kd_loss = DistillationSoftmaxCrossEntropyLoss(temperature=args.temperature,
+                                                  hard_weight=args.hard_weight)
     nsp_loss.hybridize(static_alloc=True)
     mlm_loss.hybridize(static_alloc=True)
+    #kd_loss.hybridize(static_alloc=True)
 
-    return model, nsp_loss, mlm_loss, vocabulary
+    return model, teacher, nsp_loss, mlm_loss, kd_loss, vocabulary
 
 def get_dataset(data, batch_size, num_ctxes, is_train, store):
     """create dataset"""
@@ -182,21 +194,14 @@ def forward(data, model, mlm_loss, nsp_loss, vocab_size):
     """forward computation for evaluation"""
     (input_id, masked_id, masked_position, masked_weight, \
      next_sentence_label, segment_id, valid_length) = data
-    num_masks = masked_weight.sum() + 1e-8
     valid_length = valid_length.reshape(-1)
     masked_id = masked_id.reshape(-1)
     valid_length_typed = valid_length.astype(args.dtype, copy=False)
     _, _, classified, decoded = model(input_id, segment_id, valid_length_typed,
                                       masked_position)
     decoded = decoded.reshape((-1, vocab_size))
-    ls1 = mlm_loss(decoded.astype('float32', copy=False),
-                   masked_id, masked_weight.reshape((-1, 1)))
-    ls2 = nsp_loss(classified.astype('float32', copy=False), next_sentence_label)
-    ls1 = ls1.sum() / num_masks
-    ls2 = ls2.mean()
-    ls = ls1 + ls2
-    return ls, next_sentence_label, classified, masked_id, decoded, \
-           masked_weight, ls1, ls2, valid_length.astype('float32', copy=False)
+    return next_sentence_label, classified, masked_id, decoded, \
+           masked_weight, valid_length.astype('float32', copy=False)
 
 class ParallelBERT(Parallelizable):
     """Data parallel BERT model.
@@ -206,9 +211,10 @@ class ParallelBERT(Parallelizable):
     model : Block
         The BERT model.
     """
-    def __init__(self, model, mlm_loss, nsp_loss, vocab_size, rescale_factor, trainer=None):
+    def __init__(self, model, teacher, mlm_loss, kd_loss, nsp_loss, vocab_size, rescale_factor, trainer=None):
         self._model = model
         self._mlm_loss = mlm_loss
+        self._kd_loss = kd_loss
         self._nsp_loss = nsp_loss
         self._vocab_size = vocab_size
         self._rescale_factor = rescale_factor
@@ -216,10 +222,26 @@ class ParallelBERT(Parallelizable):
 
     def forward_backward(self, x):
         """forward backward implementation"""
+        (input_id, masked_id, masked_position, masked_weight, \
+         next_sentence_label, segment_id, valid_length) = x
+        valid_length = valid_length.reshape(-1)
+        valid_length_typed = valid_length.astype(args.dtype, copy=False)
+        num_masks = masked_weight.sum() + 1e-8
+        _, _, _, decoded_teacher = model(input_id, segment_id, valid_length_typed,
+                                         masked_position)
+        decoded_teacher = decoded_teacher.reshape((-1, self._vocab_size))
+        teacher_prob = mx.nd.softmax(decoded_teacher / args.temperature)
         with mx.autograd.record():
-            (ls, next_sentence_label, classified, masked_id, decoded, \
-             masked_weight, ls1, ls2, valid_length) = forward(x, self._model, self._mlm_loss,
-                                                              self._nsp_loss, self._vocab_size)
+            (next_sentence_label, classified, masked_id, decoded, \
+             masked_weight, valid_length) = forward(x, self._model, self._mlm_loss,
+                                                    self._nsp_loss, self._vocab_size)
+            ls1 = self._kd_loss(decoded.astype('float32', copy=False), masked_id,
+                                teacher_prob.astype('float32', copy=False),
+                                masked_weight.reshape((-1, 1)))
+            ls2 = nsp_loss(classified.astype('float32', copy=False), next_sentence_label)
+            ls1 = ls1.sum() / num_masks
+            ls2 = ls2.mean()
+            ls = ls1 + ls2
             ls = ls / self._rescale_factor
         if args.dtype == 'float16':
             self._trainer.backward(ls)
@@ -251,8 +273,15 @@ def evaluate(data_eval, model, nsp_loss, mlm_loss, vocab_size, ctx):
             mask_label_list, mask_pred_list, mask_weight_list = [], [], []
             for data in data_list:
                 out = forward(data, model, mlm_loss, nsp_loss, vocab_size)
-                (ls, next_sentence_label, classified, masked_id,
-                 decoded, masked_weight, ls1, ls2, valid_length) = out
+                (next_sentence_label, classified, masked_id,
+                 decoded, masked_weight, valid_length) = out
+                num_masks = masked_weight.sum() + 1e-8
+                ls1 = mlm_loss(decoded.astype('float32', copy=False),
+                               masked_id, masked_weight.reshape((-1, 1)))
+                ls2 = nsp_loss(classified.astype('float32', copy=False), next_sentence_label)
+                ls1 = ls1.sum() / num_masks
+                ls2 = ls2.mean()
+                ls = ls1 + ls2
                 loss_list.append(ls)
                 ns_label_list.append(next_sentence_label)
                 ns_pred_list.append(classified)
@@ -308,7 +337,7 @@ def save_params(step_num, args, model, trainer):
     model.save_parameters(param_path)
     trainer.save_states(trainer_path)
 
-def train(data_train, model, nsp_loss, mlm_loss, vocab_size, ctx, store):
+def train(data_train, model, teacher, nsp_loss, mlm_loss, kd_loss, vocab_size, ctx, store):
     """Training function."""
     mlm_metric = MaskedAccuracy()
     nsp_metric = MaskedAccuracy()
@@ -348,7 +377,7 @@ def train(data_train, model, nsp_loss, mlm_loss, vocab_size, ctx, store):
     batch_num = 0
     step_num = args.start_step
 
-    parallel_model = ParallelBERT(model, mlm_loss, nsp_loss, vocab_size,
+    parallel_model = ParallelBERT(model, teacher, mlm_loss, kd_loss, nsp_loss, vocab_size,
                                   store.num_workers * accumulate, trainer=fp16_trainer)
     num_ctxes = len(ctx)
     parallel = Parallel(num_ctxes, parallel_model)
@@ -433,7 +462,7 @@ if __name__ == '__main__':
     ctx = [mx.cpu()] if args.gpus is None or args.gpus == '' else \
           [mx.gpu(int(x)) for x in args.gpus.split(',')]
 
-    model, nsp_loss, mlm_loss, vocabulary = get_model(ctx)
+    model, teacher, nsp_loss, mlm_loss, kd_loss, vocabulary = get_model(ctx)
 
     lower = 'uncased' in args.dataset_name
     tokenizer = BERTTokenizer(vocabulary, lower=lower)
@@ -446,7 +475,7 @@ if __name__ == '__main__':
 
     if args.data:
         data_train = get_dataset(args.data, args.batch_size, len(ctx), True, store)
-        train(data_train, model, nsp_loss, mlm_loss, len(tokenizer.vocab), ctx, store)
+        train(data_train, model, teacher, nsp_loss, mlm_loss, kd_loss, len(tokenizer.vocab), ctx, store)
     if args.data_eval:
         data_eval = get_dataset(args.data_eval, args.batch_size_eval, len(ctx), False, store)
         evaluate(data_eval, model, nsp_loss, mlm_loss, len(tokenizer.vocab), ctx)
