@@ -1,0 +1,1 @@
+python run_distillation.py --gpus 0 --batch_size 16 --lr 2e-5 --data 'out/*.npz' --warmup_ratio 0.5 --num_steps 20 --pretrained --log_interval=2 --data_eval 'out/*.npz' --batch_size_eval 8 --ckpt_dir ckpt --accumulate 2
