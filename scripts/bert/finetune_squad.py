@@ -184,7 +184,8 @@ parser.add_argument('--null_score_diff_threshold',
                     'Typical values are between -1.0 and -5.0. default is 0.0')
 
 parser.add_argument('--gpu',
-                    action='store_true',
+                    type=int,
+                    default=None,
                     help='whether to use gpu for finetuning')
 
 parser.add_argument('--seed',
@@ -226,7 +227,7 @@ epochs = args.epochs
 batch_size = args.batch_size
 test_batch_size = args.test_batch_size
 lr = args.lr
-ctx = mx.cpu() if not args.gpu else mx.gpu()
+ctx = mx.cpu() if args.gpu is None else mx.gpu(args.gpu)
 
 accumulate = args.accumulate
 log_interval = args.log_interval * accumulate if accumulate else args.log_interval
