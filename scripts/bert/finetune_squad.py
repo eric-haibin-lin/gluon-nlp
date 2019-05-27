@@ -50,6 +50,7 @@ from mxnet import gluon, nd
 
 import gluonnlp as nlp
 from gluonnlp.data import SQuAD
+from gluonnlp.utils import load_parameters
 from bert_qa_model import BertForQALoss, BertForQA
 from bert_qa_dataset import (SQuADTransform, preprocess_dataset)
 from bert_qa_evaluate import get_F1_EM, predictions
@@ -265,8 +266,15 @@ berttoken = nlp.data.BERTTokenizer(vocab=vocab, lower=lower)
 
 net = BertForQA(bert=bert)
 if pretrained_bert_parameters and not model_parameters:
-    bert.load_parameters(pretrained_bert_parameters, ctx=ctx,
-                         ignore_extra=True)
+    try:
+        load_parameters(bert, pretrained_bert_parameters, ctx=ctx,
+                        ignore_extra=True)
+    except AssertionError:
+        bert.cast('float16')
+        load_parameters(bert, pretrained_bert_parameters, ctx=ctx,
+                        ignore_extra=True)
+        bert.cast('float32')
+
 if not model_parameters:
     net.span_classifier.initialize(init=mx.init.Normal(0.02), ctx=ctx)
 else:
