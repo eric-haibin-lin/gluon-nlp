@@ -55,10 +55,6 @@ from bert_qa_model import BertForQALoss, BertForQA
 from bert_qa_dataset import (SQuADTransform, preprocess_dataset)
 from bert_qa_evaluate import get_F1_EM, predictions
 
-np.random.seed(6)
-random.seed(6)
-mx.random.seed(6)
-
 log = logging.getLogger('gluonnlp')
 log.setLevel(logging.DEBUG)
 formatter = logging.Formatter(
@@ -191,7 +187,17 @@ parser.add_argument('--gpu',
                     action='store_true',
                     help='whether to use gpu for finetuning')
 
+parser.add_argument('--seed',
+                    type=int,
+                    default=6,
+                    help='The random seed')
+
 args = parser.parse_args()
+
+np.random.seed(args.seed)
+random.seed(args.seed)
+mx.random.seed(args.seed)
+
 
 output_dir = args.output_dir
 if not os.path.exists(output_dir):
