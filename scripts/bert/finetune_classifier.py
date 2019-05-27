@@ -48,6 +48,7 @@ from mxnet import gluon
 import gluonnlp as nlp
 from gluonnlp.model import get_bert_model
 from gluonnlp.data import BERTTokenizer
+from gluonnlp.utils import load_parameters
 
 from bert import BERTClassifier, BERTRegression
 from dataset import MRPCTask, QQPTask, RTETask, STSBTask, \
@@ -233,11 +234,17 @@ else:
 output_dir = args.output_dir
 if pretrained_bert_parameters:
     logging.info('loading bert params from %s', pretrained_bert_parameters)
-    model.bert.load_parameters(pretrained_bert_parameters, ctx=ctx,
-                               ignore_extra=True)
+    try:
+        load_parameters(model.bert, pretrained_bert_parameters,
+                        ctx=ctx, ignore_extra=True)
+    except AssertionError:
+        model.bert.cast('float16')
+        load_parameters(model.bert, pretrained_bert_parameters,
+                        ctx=ctx, ignore_extra=True)
+        model.bert.cast('float32')
 if model_parameters:
     logging.info('loading model params from %s', model_parameters)
-    model.load_parameters(model_parameters, ctx=ctx)
+    load_parameters(model, model_parameters, ctx=ctx)
 nlp.utils.mkdir(output_dir)
 
 logging.info(model)
