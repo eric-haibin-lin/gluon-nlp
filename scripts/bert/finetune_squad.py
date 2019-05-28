@@ -40,6 +40,7 @@ import collections
 import json
 import logging
 import os
+import io
 import random
 import time
 import warnings
@@ -491,17 +492,17 @@ def evaluate():
         n_best_size=n_best_size,
         version_2=version_2)
 
-    with open(os.path.join(output_dir, 'predictions.json'),
-              'w', encoding='utf-8') as all_predictions_write:
+    with io.open(os.path.join(output_dir, 'predictions.json'),
+                 'w', encoding='utf-8') as all_predictions_write:
         all_predictions_write.write(json.dumps(all_predictions))
 
-    with open(os.path.join(output_dir, 'nbest_predictions.json'),
-              'w', encoding='utf-8') as all_predictions_write:
+    with io.open(os.path.join(output_dir, 'nbest_predictions.json'),
+                 'w', encoding='utf-8') as all_predictions_write:
         all_predictions_write.write(json.dumps(all_nbest_json))
 
     if version_2:
-        with open(os.path.join(output_dir, 'null_odds.json'),
-                  'w', encoding='utf-8') as all_predictions_write:
+        with io.open(os.path.join(output_dir, 'null_odds.json'),
+                     'w', encoding='utf-8') as all_predictions_write:
             all_predictions_write.write(json.dumps(scores_diff_json))
     else:
         log.info(get_F1_EM(dev_data, all_predictions))
