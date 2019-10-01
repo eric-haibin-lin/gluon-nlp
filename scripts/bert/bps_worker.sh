@@ -40,5 +40,5 @@ if [ $DMLC_ROLE = 'worker' ]; then
        --lr 1e-4 --total_batch_size $BS --accumulate 1 --raw --short_seq_prob 0 --log_interval 10 \
        --max_seq_length 512 \
        --eval_use_npz --synthetic_data \
-       --accumulate 1 --model $MODEL --total_batch_size_eval $BS --backend byteps 2>&1 | tee -a result.log
+       --accumulate 1 --model $MODEL --total_batch_size_eval $BS --comm_backend byteps 2>&1 | tee -a result.log
 fi
