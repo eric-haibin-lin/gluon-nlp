@@ -42,6 +42,10 @@ try:
     import horovod.mxnet as hvd
 except ImportError:
     pass
+try:
+    import byteps.mxnet as bps
+except ImportError:
+    pass
 
 from fp16_utils import FP16Trainer
 from pretraining_utils import get_model_loss, get_pretrain_data_npz, get_dummy_dataloader
@@ -254,6 +258,8 @@ def train(data_train, data_eval, model):
     # backend specific implementation
     if backend == 'horovod':
         trainer = hvd.DistributedTrainer(param_dict, 'bertadam', optim_params)
+    elif backend == 'byteps:
+        trainer = bps.DistributedTrainer(param_dict, 'bertadam', optim_params)
     else:
         trainer = mx.gluon.Trainer(param_dict, 'bertadam', optim_params,
                                    update_on_kvstore=False)
