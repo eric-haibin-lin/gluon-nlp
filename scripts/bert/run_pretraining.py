@@ -258,7 +258,7 @@ def train(data_train, data_eval, model):
     # backend specific implementation
     if backend == 'horovod':
         trainer = hvd.DistributedTrainer(param_dict, 'bertadam', optim_params)
-    elif backend == 'byteps:
+    elif backend == 'byteps':
         trainer = bps.DistributedTrainer(param_dict, 'bertadam', optim_params)
     else:
         trainer = mx.gluon.Trainer(param_dict, 'bertadam', optim_params,
