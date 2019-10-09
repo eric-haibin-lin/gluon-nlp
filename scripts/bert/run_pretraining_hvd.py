@@ -84,13 +84,15 @@ def train(data_train, model, nsp_loss, mlm_loss, vocab_size, ctx):
     optim_params = {'learning_rate': lr, 'epsilon': 1e-6, 'wd': 0.01}
     if args.dtype == 'float16':
         optim_params['multi_precision'] = True
+    if args.optimizer == 'lamb':
+        optim_params['bias_correction'] = True
 
     dynamic_loss_scale = args.dtype == 'float16'
     if dynamic_loss_scale:
-        loss_scale_param = {'scale_window': 2000 / num_workers}
+        loss_scale_param = {'scale_window': 2000 / num_workers, 'init_scale' : 2}
     else:
         loss_scale_param = None
-    trainer = hvd.DistributedTrainer(model.collect_params(), 'bertadam', optim_params)
+    trainer = hvd.DistributedTrainer(model.collect_params(), args.optimizer, optim_params)
     fp16_trainer = FP16Trainer(trainer, dynamic_loss_scale=dynamic_loss_scale,
                                loss_scaler_params=loss_scale_param)
 
@@ -116,6 +118,7 @@ def train(data_train, model, nsp_loss, mlm_loss, vocab_size, ctx):
     train_begin_time = time.time()
     begin_time = time.time()
     running_mlm_loss, running_nsp_loss = 0, 0
+    local_mlm_loss, local_num_masks = 0, 0
     running_num_tks = 0
     batch_num = 0
     step_num = args.start_step
@@ -160,18 +163,18 @@ def train(data_train, model, nsp_loss, mlm_loss, vocab_size, ctx):
                 # forward
                 with mx.autograd.record():
                     (ls, ns_label, classified, masked_id, decoded, \
-                     masked_weight, ls1, ls2, valid_len) = forward(data, model, mlm_loss,
+                     masked_weight, ls1, ls2, valid_len, num_masks) = forward(data, model, mlm_loss,
                                                                    nsp_loss, vocab_size, args.dtype)
-                    ls = ls / accumulate
+                    # ls = ls / accumulate
                     # backward
                     if args.dtype == 'float16':
                         fp16_trainer.backward(ls)
                     else:
                         ls.backward()
 
-                running_mlm_loss += ls1.as_in_context(mx.cpu())
-                running_nsp_loss += ls2.as_in_context(mx.cpu())
-                running_num_tks += valid_len.sum().as_in_context(mx.cpu())
+                local_num_masks += num_masks
+                local_mlm_loss += ls1
+                running_num_tks += valid_len.sum()
 
                 # update
                 if (batch_num + 1) % accumulate == 0:
@@ -179,15 +182,19 @@ def train(data_train, model, nsp_loss, mlm_loss, vocab_size, ctx):
                     # 1. allreduce gradients from all workers
                     # 2. checking the global_norm of gradients and clip them if necessary
                     # 3. averaging the gradients and apply updates
-                    fp16_trainer.step(1, max_norm=1*num_workers)
+                    running_mlm_loss += local_mlm_loss / local_num_masks
+                    hvd.allreduce_(local_num_masks, average=False, name='num_mask')
+                    fp16_trainer.step(local_num_masks, max_norm=local_num_masks*1)
+                    local_num_masks, local_mlm_loss = 0, 0
 
-                nsp_metric.update([ns_label], [classified])
-                mlm_metric.update([masked_id], [decoded], [masked_weight])
+                classified.wait_to_read()
+                #nsp_metric.update([ns_label], [classified])
+                #mlm_metric.update([masked_id], [decoded], [masked_weight])
 
                 # logging
                 if (step_num + 1) % (args.log_interval) == 0 and (batch_num + 1) % accumulate == 0:
-                    log(begin_time, running_num_tks, running_mlm_loss / accumulate,
-                        running_nsp_loss / accumulate, step_num, mlm_metric, nsp_metric,
+                    log(begin_time, running_num_tks, running_mlm_loss / args.log_interval,
+                        0, step_num, mlm_metric, nsp_metric,
                         trainer, args.log_interval)
                     begin_time = time.time()
                     running_mlm_loss = running_nsp_loss = running_num_tks = 0

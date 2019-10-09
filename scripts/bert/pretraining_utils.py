@@ -146,12 +146,15 @@ def log(begin_time, running_num_tks, running_mlm_loss, running_nsp_loss, step_nu
     duration = end_time - begin_time
     throughput = running_num_tks / duration / 1000.0
     running_mlm_loss = running_mlm_loss / log_interval
-    running_nsp_loss = running_nsp_loss / log_interval
+    #running_nsp_loss = running_nsp_loss / log_interval
     lr = trainer.learning_rate if trainer else 0
     # pylint: disable=line-too-long
     logging.info('[step {}]\tmlm_loss={:.5f}\tmlm_acc={:.5f}\tnsp_loss={:.5f}\tnsp_acc={:.3f}\tthroughput={:.1f}K tks/s\tlr={:.7f} time={:.2f}, latency={:.1f} ms/batch'
-                 .format(step_num, running_mlm_loss.asscalar(), mlm_metric.get()[1] * 100, running_nsp_loss.asscalar(),
-                         nsp_metric.get()[1] * 100, throughput.asscalar(), lr, duration, duration*1000/log_interval))
+                 .format(step_num, running_mlm_loss.asscalar(), 0, 0,
+                         0, throughput.asscalar(), lr, duration, duration*1000/log_interval))
+    #logging.info('[step {}]\tmlm_loss={:.5f}\tmlm_acc={:.5f}\tnsp_loss={:.5f}\tnsp_acc={:.3f}\tthroughput={:.1f}K tks/s\tlr={:.7f} time={:.2f}, latency={:.1f} ms/batch'
+    #             .format(step_num, running_mlm_loss.asscalar(), mlm_metric.get()[1] * 100, running_nsp_loss.asscalar(),
+    #                     nsp_metric.get()[1] * 100, throughput.asscalar(), lr, duration, duration*1000/log_interval))
     # pylint: enable=line-too-long
 
 def split_and_load(arrs, ctx):
@@ -166,7 +169,7 @@ def forward(data, model, mlm_loss, nsp_loss, vocab_size, dtype):
     """forward computation for evaluation"""
     (input_id, masked_id, masked_position, masked_weight, \
      next_sentence_label, segment_id, valid_length) = data
-    num_masks = masked_weight.sum() + 1e-8
+    num_masks = masked_weight.sum()
     valid_length = valid_length.reshape(-1)
     masked_id = masked_id.reshape(-1)
     valid_length_typed = valid_length.astype(dtype, copy=False)
@@ -176,11 +179,11 @@ def forward(data, model, mlm_loss, nsp_loss, vocab_size, dtype):
     ls1 = mlm_loss(decoded.astype('float32', copy=False),
                    masked_id, masked_weight.reshape((-1, 1)))
     ls2 = nsp_loss(classified.astype('float32', copy=False), next_sentence_label)
-    ls1 = ls1.sum() / num_masks
+    ls1 = ls1.sum()
     ls2 = ls2.mean()
     ls = ls1 + ls2
     return ls, next_sentence_label, classified, masked_id, decoded, \
-           masked_weight, ls1, ls2, valid_length.astype('float32', copy=False)
+           masked_weight, ls1, ls2, valid_length.astype('float32', copy=False), num_masks
 
 
 def evaluate(data_eval, model, nsp_loss, mlm_loss, vocab_size, ctx, log_interval, dtype):
@@ -279,6 +282,7 @@ def get_argparser():
     parser.add_argument('--start_step', type=int, default=0,
                         help='Start optimization step from the checkpoint.')
     parser.add_argument('--lr', type=float, default=1e-4, help='Learning rate')
+    parser.add_argument('--optimizer', type=str, default='bertadam', help='Optimizer')
     parser.add_argument('--warmup_ratio', type=float, default=0.1,
                         help='ratio of warmup steps used in NOAM\'s stepsize schedule')
     parser.add_argument('--log_interval', type=int, default=10, help='Report interval')
