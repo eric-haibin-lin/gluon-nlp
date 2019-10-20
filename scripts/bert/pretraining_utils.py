@@ -29,11 +29,13 @@ import gluonnlp as nlp
 from data.pretrain import BERTSamplerFn, BERTDataLoaderFn
 from data.dataloader import SimpleDatasetFn, DatasetLoader
 from create_pretraining_data import create_training_instances
+from mxnet.gluon.data import Sampler
 
 
 __all__ = ['get_model_loss', 'get_pretrain_data_npz', 'get_dummy_dataloader',
            'save_parameters', 'save_states', 'evaluate', 'split_and_load',
            'get_pretrain_data_text', 'generate_dev_set', 'profile']
+
 
 def get_model_loss(ctx, model, pretrained, dataset_name, vocab, dtype,
                    ckpt_dir=None, start_step=None):
@@ -68,26 +70,18 @@ def get_model_loss(ctx, model, pretrained, dataset_name, vocab, dtype,
     BERTVocab : the vocabulary.
     """
     # model
+    import logging
     model, vocabulary = nlp.model.get_model(model, dataset_name=dataset_name, vocab=vocab,
                                             pretrained=pretrained, ctx=ctx)
 
     if not pretrained:
         import os
         if int(os.environ.get('TRUNCATE_NORM', False)):
-            import logging
             logging.info('Using truncated norm initialization')
             model.initialize(init=nlp.initializer.TruncNorm(0.02), ctx=ctx)
         else:
             model.initialize(init=mx.init.Normal(0.02), ctx=ctx)
     model.cast(dtype)
-
-    if ckpt_dir and start_step:
-        param_path = os.path.join(ckpt_dir, '%07d.params'%start_step)
-        nlp.utils.load_parameters(model, param_path, ctx=ctx)
-        logging.info('Loading step %d checkpoints from %s.', start_step, param_path)
-
-    model.hybridize(static_alloc=True, static_shape=True)
-
     # losses
     nsp_loss = mx.gluon.loss.SoftmaxCELoss()
     mlm_loss = mx.gluon.loss.SoftmaxCELoss()
@@ -95,6 +89,17 @@ def get_model_loss(ctx, model, pretrained, dataset_name, vocab, dtype,
     mlm_loss.hybridize(static_alloc=True, static_shape=True)
 
     model = BERTForPretrain(model, nsp_loss, mlm_loss, len(vocabulary))
+
+    if ckpt_dir and start_step:
+        param_path = os.path.join(ckpt_dir, '%07d.params'%start_step)
+        nlp.utils.load_parameters(model, param_path, ctx=ctx, cast_dtype=True)
+        logging.info('Loading step %d checkpoints from %s.', start_step, param_path)
+
+    if int(os.environ.get('NO_HYBRID', False)):
+        pass
+    else:
+        model.hybridize(static_alloc=True, static_shape=True)
+
     return model, vocabulary
 
 class BERTPretrainDataset(mx.gluon.data.ArrayDataset):
@@ -188,8 +193,11 @@ def get_pretrain_data_text(data, batch_size, num_ctxes, shuffle,
     dataset_fn = SimpleDatasetFn(BERTPretrainDataset, dataset_params)
     sampler_fn = BERTSamplerFn(batch_size, shuffle, num_ctxes, num_buckets)
     dataloader_fn = BERTDataLoaderFn(num_ctxes, vocab)
-
-    split_sampler = nlp.data.SplitSampler(num_files, num_parts=num_parts, part_index=part_idx)
+    if int(os.environ.get('NO_SHARD', False)):
+        logging.info('Disabled data sharding')
+        split_sampler = nlp.data.SplitSampler(num_files, num_parts=1, part_index=0)
+    else:
+        split_sampler = nlp.data.SplitSampler(num_files, num_parts=num_parts, part_index=part_idx)
     dataloader = DatasetLoader(data, split_sampler, dataset_fn, sampler_fn, dataloader_fn,
                                num_dataset_workers=num_workers)
     return dataloader
@@ -292,7 +300,7 @@ def log(begin_time, running_num_tks, running_mlm_loss, running_nsp_loss, step_nu
     lr = trainer.learning_rate if trainer else 0
     # pylint: disable=line-too-long
     logging.info('[step {}]\tmlm_loss={:7.5f}\tmlm_acc={:4.2f}\tnsp_loss={:5.2f}\tnsp_acc={:5.2f}\tthroughput={:.1f}K tks/s\tlr={:.7f} time={:.2f}, latency={:.1f} ms/batch'
-                 .format(step_num, running_mlm_loss.asscalar(), mlm_metric.get()[1] * 100, running_nsp_loss.asscalar(),
+                 .format(step_num, running_mlm_loss.asscalar(), mlm_metric.get()[1] * 100, 0,
                          nsp_metric.get()[1] * 100, throughput.asscalar(), lr, duration, duration*1000/log_interval))
     # pylint: enable=line-too-long
 
@@ -338,7 +346,11 @@ class BERTForPretrain(mx.gluon.Block):
         ls1 = self.mlm_loss(decoded.astype('float32', copy=False),
                             masked_id, masked_weight.reshape((-1, 1)))
         ls2 = self.nsp_loss(classified.astype('float32', copy=False), next_sentence_label)
-        ls1 = ls1.sum()
+        # sum for average mlm loss over all masks
+        if int(os.environ.get('USE_MEAN', False)):
+            ls1 = ls1.mean()
+        else:
+            ls1 = ls1.sum()
         ls2 = ls2.mean()
         return classified, decoded, ls1, ls2, num_masks
 
@@ -379,7 +391,11 @@ def evaluate(data_eval, model, ctx, log_interval, dtype, rank, num_workers):
             mask_weight_list.append(masked_weight)
 
             valid_length = valid_length.astype('float32', copy=False)
-            running_mlm_loss += (ls1 / num_masks).as_in_context(mx.cpu())
+
+            if int(os.environ.get('USE_MEAN', False)):
+                running_mlm_loss += ls1.as_in_context(mx.cpu())
+            else:
+                running_mlm_loss += (ls1 / num_masks).as_in_context(mx.cpu())
             running_nsp_loss += ls2.as_in_context(mx.cpu())
             running_num_tks += valid_length.sum().as_in_context(mx.cpu())
         nsp_metric.update(ns_label_list, ns_pred_list)
@@ -403,6 +419,9 @@ def evaluate(data_eval, model, ctx, log_interval, dtype, rank, num_workers):
         total_mlm_loss += running_mlm_loss
         total_nsp_loss += running_nsp_loss
     if step_num > 0:
+        if int(os.environ.get('REDUCE_LOSS', False)):
+            import horovod.mxnet as hvd
+            hvd.allreduce_(total_mlm_loss, average=True, name='eval_loss')
         total_mlm_loss /= step_num
         total_nsp_loss /= step_num
         logging.info('Eval mlm_loss={:.3f}\tmlm_acc={:.1f}\tnsp_loss={:.3f}\tnsp_acc={:.1f}\t'

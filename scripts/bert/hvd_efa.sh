@@ -10,18 +10,28 @@ mpirun --allow-run-as-root --tag-output -np 256 --hostfile $HOME/hosts_np256 \
         -x NCCL_TREE_THRESHOLD=0 \
         -x EPS_AFTER_SQRT=1 -x LAMB_BULK=30 \
         -x MXNET_SAFE_ACCUMULATION=1 \
+        -x USE_MEAN=0 \
         -x MXNET_EXEC_BULK_EXEC_MAX_NODE_TRAIN_FWD=120 \
         python run_pretraining.py --comm_backend horovod \
                 --model='bert_24_1024_16' \
-                --data='/home/ec2-user/mxnet-data/bert-pretraining/datasets/book-corpus/book-corpus-large-split/*.train,/home/ec2-user/mxnet-data/bert-pretraining/datasets/enwiki/enwiki-feb-doc-split/*.train' \
-                --data_eval='/home/ec2-user/mxnet-data/bert-pretraining/datasets/book-corpus/book-corpus-large-split/*.dev,/home/ec2-user/mxnet-data/bert-pretraining/datasets/enwiki/enwiki-feb-doc-split/*.dev' \
-                --num_steps 14063 --max_seq_length 128 --lr 0.005 --warmup_ratio 0.2 \
-                --total_batch_size 32768 --no_compute_acc  --max_predictions_per_seq 20 \
-                --total_batch_size_eval 32768 \
+                --data_eval='32K_np256_ckpt_dir_lamb2_eps_rescale_numworker/data_eval_cache/part-000.npz' --eval_use_npz \
                 --optimizer lamb2 \
                 --ckpt_interval 99999999 \
+                --num_steps 14063 --max_seq_length 128 --lr 0.006 --warmup_ratio 0.2 \
+                --total_batch_size 32768 --no_compute_acc  --max_predictions_per_seq 20 \
+                --total_batch_size_eval 32768 \
+                --start_step 14063 \
                 --raw --log_interval 50 --accumulate 2 \
-                --ckpt_dir ./32K_np256_ckpt_dir_lamb2_eps_rescale_numworker 2>&1 | tee -a 32K_np256_ckpt_dir_lamb2_eps_rescale_numworker.log
+                --ckpt_dir ./32K_np256_ckpt_dir_lamb2_eps_rescale_numworker 2>&1 | tee -a 32K_np256_ckpt_dir_lamb2_eps_rescale_numworker_eval.log
+
+                #--data='/home/ec2-user/mxnet-data/bert-pretraining/datasets/book-corpus/book-corpus-large-split/*.train,/home/ec2-user/mxnet-data/bert-pretraining/datasets/enwiki/enwiki-feb-doc-split/*.train' \
+                #--data_eval='/home/ec2-user/mxnet-data/bert-pretraining/datasets/book-corpus/book-corpus-large-split/*.dev,/home/ec2-user/mxnet-data/bert-pretraining/datasets/enwiki/enwiki-feb-doc-split/*.dev' \
+                #--num_steps 7032 --max_seq_length 128 --lr 0.006 --warmup_ratio 0.2843 \
+                #--total_batch_size 65536 --no_compute_acc  --max_predictions_per_seq 20 \
+                #--total_batch_size_eval 65536 \
+                #--raw --log_interval 50 --accumulate 4 \
+                #--ckpt_dir ./64K_np256_ckpt_dir_lamb2_eps_rescale_numworker 2>&1 | tee -a 64K_np256_ckpt_dir_lamb2_eps_rescale_numworker.log
+
 
         #-x HOROVOD_TIMELINE=timeline_tree.json \
                 #--synthetic_data --eval_use_npz \

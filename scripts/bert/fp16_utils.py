@@ -92,6 +92,10 @@ class LAMB2(Optimizer):
         import logging
         logging.info('self._eps_after_sqrt = ' + str(self._eps_after_sqrt) + " bulk = " + str(self._bulk))
         self._verbose = verbose
+        if os.environ.get('USE_BOUND', False):
+            self._use_bound = True
+        else:
+            self._use_bound = False
 
     def create_state(self, index, weight):
         stype = weight.stype
@@ -132,6 +136,8 @@ class LAMB2(Optimizer):
                 g += wd * weight
             else:
                 # apply bias correction
+                if self._use_bound:
+                    r1 = minimum(maximum(r1, self.lower_bound), self.upper_bound)
                 mean_hat = mean / (1. - power(self.beta1, t))
                 var_hat = var / (1. - power(self.beta2, t))
                 if self._eps_after_sqrt:
@@ -380,8 +386,10 @@ class DynamicLossScaler(LossScaler):
 
     def update_scale(self, overflow):
         """dynamically update loss scale"""
+        import logging
         iter_since_rescale = self._num_steps - self._last_rescale_iter
         if overflow:
+            logging.info('DynamicLossScaler: overflow detected.')
             self._last_overflow_iter = self._num_steps
             self._overflows_since_rescale += 1
             percentage = self._overflows_since_rescale / float(iter_since_rescale)
@@ -391,10 +399,12 @@ class DynamicLossScaler(LossScaler):
                 self._last_rescale_iter = self._num_steps
                 self._overflows_since_rescale = 0
                 if self.loss_scale < 1 or True:
-                    import logging
-                    logging.info('DynamicLossScaler: overflow detected. set loss_scale = %s'%
+                    logging.info('DynamicLossScaler: Set loss_scale = %s'%
                                   self.loss_scale)
         elif (self._num_steps - self._last_overflow_iter) % self.scale_window == 0:
             self.loss_scale *= self.scale_factor
             self._last_rescale_iter = self._num_steps
+            import logging
+            logging.info('DynamicLossScaler: underflow detected. set loss_scale = %s'%
+                          self.loss_scale)
         self._num_steps += 1

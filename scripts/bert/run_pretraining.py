@@ -92,7 +92,7 @@ parser.add_argument('--dtype', type=str, default='float16', help='data dtype')
 parser.add_argument('--no_compute_acc', action='store_true',
                     help='skip accuracy metric computation during training')
 # validation
-parser.add_argument('--eval_interval', type=int, default=50000, help='Evaluation interval')
+parser.add_argument('--eval_interval', type=int, default=50000000, help='Evaluation interval')
 parser.add_argument('--total_batch_size_eval', type=int, default=256,
                     help='Global batch size for evaluation. total_batch_size_eval = '
                          'batch_size_eval_per_worker * num_worker * accumulate.')
@@ -145,12 +145,6 @@ args = parser.parse_args()
 
 # logging
 nlp.utils.mkdir(args.ckpt_dir)
-level = logging.DEBUG if args.verbose else logging.INFO
-logging.basicConfig(filename=os.path.join(args.ckpt_dir, 'log'))
-logging.getLogger().setLevel(level)
-logging.info(args)
-os.environ['MXNET_GPU_MEM_POOL_TYPE'] = 'Round'
-logging.info(os.environ)
 
 class DataParallelBERT(nlp.utils.Parallelizable):
     """Data parallel BERT model.
@@ -175,6 +169,9 @@ class DataParallelBERT(nlp.utils.Parallelizable):
                               next_sentence_label, segment_id, valid_length)
             classified, decoded, ls1, ls2, num_masks = out
             ls = ls1 + ls2
+            if int(os.environ.get('USE_MEAN', False)):
+                ls = ls / args.accumulate
+
         if self._trainer:
             self._trainer.backward(ls)
         else:
@@ -227,6 +224,14 @@ def init_comm(backend):
 
 backend = args.comm_backend
 store, num_workers, rank, local_rank, is_master_node, ctxs = init_comm(backend)
+
+level = logging.DEBUG if args.verbose else logging.INFO
+logging.basicConfig(filename=os.path.join(args.ckpt_dir, 'log.' + str(rank)))
+logging.getLogger().setLevel(level)
+logging.info(args)
+os.environ['MXNET_GPU_MEM_POOL_TYPE'] = 'Round'
+logging.info(os.environ)
+
 assert args.total_batch_size % (args.accumulate * num_workers) == 0
 assert args.total_batch_size_eval % (args.accumulate * num_workers) == 0
 batch_size = int(args.total_batch_size / num_workers / args.accumulate / len(ctxs))
@@ -259,7 +264,14 @@ def train(data_train, data_eval, model):
 
     dynamic_loss_scale = args.dtype == 'float16'
     if dynamic_loss_scale:
-        loss_scale_param = {'scale_window': 2000 / num_workers, 'init_scale': 1}
+        if int(os.environ.get('LARGE_WINDOW', False)):
+            window_size = int(2000 / 8)
+        else:
+            window_size = 2000 / num_workers
+        if int(os.environ.get('USE_MEAN', False)):
+            loss_scale_param = {'scale_window': window_size}
+        else:
+            loss_scale_param = {'scale_window': window_size, 'init_scale': 1}
     else:
         loss_scale_param = None
 
@@ -366,6 +378,8 @@ def train(data_train, data_eval, model):
                     local_num_masks += num_masks
                     local_mlm_loss += ls1
                     running_num_tks += valid_length.sum()
+                    if int(os.environ.get('USE_MEAN', False)):
+                        running_mlm_loss += ls1
             # pre fetch next batch
             try:
                 next_data_batch = next(data_train_iter)
@@ -374,15 +388,34 @@ def train(data_train, data_eval, model):
 
             # update
             if (batch_num + 1) % accumulate == 0:
-                running_mlm_loss += local_mlm_loss / local_num_masks
-                if backend == 'horovod':
-                    hvd.allreduce_(local_num_masks, average=False, name='local_num_masks')
-                elif backend == 'byteps':
-                    bps.byteps_push_pull(local_num_masks, is_average=False,
-                                         name="local_num_masks", priority=0)
-                # because byteps and horovod implicitly set scale /= num_workers
-                fp16_trainer.step(local_num_masks / num_workers, max_norm=local_num_masks,
-                                  num_ctxs=len(ctxs) * num_workers)
+                if int(os.environ.get('USE_MEAN', False)):
+                    # because byteps and horovod implicitly set scale /= num_workers
+                    fp16_trainer.step(1, max_norm=1.0 * num_workers, num_ctxs=len(ctxs) * num_workers)
+                else:
+                    # aggregate num_mask for averaged mlm_loss
+                    if backend == 'horovod':
+                        if int(os.environ.get('REDUCE_LOSS', False)):
+                            hvd.allreduce_(local_mlm_loss, average=False, name='local_mlm_loss')
+                            hvd.allreduce_(local_num_masks, average=False, name='local_num_masks')
+                            running_mlm_loss += local_mlm_loss / local_num_masks
+                        else:
+                            running_mlm_loss += local_mlm_loss / local_num_masks
+                            hvd.allreduce_(local_num_masks, average=False, name='local_num_masks')
+                    elif backend == 'byteps':
+                        logging.info('warning: local_mlm_loss is not reduced')
+                        running_mlm_loss += local_mlm_loss / local_num_masks
+                        bps.byteps_push_pull(local_num_masks, is_average=False,
+                                             name="local_num_masks", priority=0)
+                    # because byteps and horovod implicitly set scale /= num_workers
+                    if int(os.environ.get('MXNET_SIMULATE', False)):
+                        fp16_trainer.step(local_num_masks / 8, max_norm=local_num_masks,
+                                          num_ctxs=len(ctxs) * num_workers)
+                    elif int(os.environ.get('MXNET_SIMULATE_EIGHT', False)):
+                        fp16_trainer.step(local_num_masks / num_workers * 8, max_norm=local_num_masks,
+                                          num_ctxs=len(ctxs) * num_workers)
+                    else:
+                        fp16_trainer.step(local_num_masks / num_workers, max_norm=local_num_masks,
+                                          num_ctxs=len(ctxs) * num_workers)
                 local_num_masks, local_mlm_loss = 0, 0
             # update metrics
             if args.no_compute_acc:
@@ -394,12 +427,17 @@ def train(data_train, data_eval, model):
 
             # logging
             if (step_num + 1) % (args.log_interval) == 0 and (batch_num + 1) % accumulate == 0:
-                if args.no_compute_acc:
-                    log_noacc(begin_time, running_num_tks, running_mlm_loss,
-                              0, step_num, trainer, args.log_interval)
+                if int(os.environ.get('USE_MEAN', False)):
+                    report_mlm = running_mlm_loss / args.accumulate
                 else:
-                    log(begin_time, running_num_tks, running_mlm_loss / accumulate,
-                        running_nsp_loss / accumulate, step_num, mlm_metric, nsp_metric,
+                    report_mlm = running_mlm_loss
+
+                if args.no_compute_acc:
+                        log_noacc(begin_time, running_num_tks, report_mlm,
+                                  0, step_num, trainer, args.log_interval)
+                else:
+                    log(begin_time, running_num_tks, report_mlm,
+                        0, step_num, mlm_metric, nsp_metric,
                         trainer, args.log_interval)
                     mlm_metric.reset_local()
                     nsp_metric.reset_local()
@@ -412,11 +450,11 @@ def train(data_train, data_eval, model):
                     save_states(step_num, trainer, args.ckpt_dir, local_rank)
                     if local_rank == 0:
                         save_parameters(step_num, model.bert, args.ckpt_dir)
-                if (step_num + 1) % args.eval_interval == 0 and data_eval:
-                    # eval data is always based on a fixed npz file.
-                    dataset_eval = get_pretrain_data_npz(data_eval, batch_size_eval,
-                                                         1, False, 1, vocab)
-                    evaluate(dataset_eval, model, ctxs, args.log_interval, args.dtype, rank, num_workers)
+            if (step_num + 1) % args.eval_interval == 0 and data_eval:
+                # eval data is always based on a fixed npz file.
+                dataset_eval = get_pretrain_data_npz(data_eval, batch_size_eval,
+                                                     1, False, 1, vocab)
+                evaluate(dataset_eval, model, ctxs, args.log_interval, args.dtype, local_rank, 8)
 
             batch_num += 1
 
@@ -430,6 +468,8 @@ def train(data_train, data_eval, model):
 
 if __name__ == '__main__':
     random_seed = random.randint(0, 1000)
+    if int(os.environ.get('NO_SHARD', False)):
+        random_seed = random_seed + rank
 
     dataset_name, vocab = args.dataset_name, None
     if args.sentencepiece:
