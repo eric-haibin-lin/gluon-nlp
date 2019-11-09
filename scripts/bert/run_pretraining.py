@@ -242,6 +242,21 @@ assert batch_size_eval > 0
 logging.info("{} / {}".format(rank, num_workers))
 
 early_stop = os.environ.get('HOROVOD_TIMELINE', None)
+eval_mlm_loss = None
+
+def grad_fn(model, acc_grad_dict, ctxs, req='zero'):
+    for k, v in model.collect_params().items():
+        if v.grad_req == 'null':
+            continue
+        for i, context in enumerate(ctxs):
+            if req == 'zero':
+                acc_grad_dict[k][i][:] = 0
+            elif req == 'add':
+                acc_grad_dict[k][i][:] += v.grad(context)
+            elif req == 'assign':
+                v.grad(context)[:] = acc_grad_dict[k][i]
+            else:
+                raise NotImplementedError
 
 def train(data_train, data_eval, model):
     """Training function."""
@@ -290,9 +305,12 @@ def train(data_train, data_eval, model):
                                loss_scaler_params=loss_scale_param)
 
     if args.start_step:
-        state_path = os.path.join(args.ckpt_dir, '%07d.states.%02d'%(args.start_step, local_rank))
-        logging.info('Loading trainer state from %s', state_path)
-        nlp.utils.load_states(trainer, state_path)
+        if not int(os.environ.get('SKIP_STATE_LOADING', False)):
+            state_path = os.path.join(args.ckpt_dir, '%07d.states.%02d'%(args.start_step, local_rank))
+            logging.info('Loading trainer state from %s', state_path)
+            nlp.utils.load_states(trainer, state_path)
+        else:
+            logging.info('Skipping trainer state loading')
 
     accumulate = args.accumulate
     num_train_steps = args.num_steps
@@ -303,9 +321,12 @@ def train(data_train, data_eval, model):
     # Do not apply weight decay on LayerNorm and bias terms
     for _, v in model.collect_params('.*beta|.*gamma|.*bias').items():
         v.wd_mult = 0.0
-    if accumulate > 1:
-        for p in params:
-            p.grad_req = 'add'
+    if not int(os.environ.get('MANUAL_ACC', False)):
+        if accumulate > 1:
+            for p in params:
+                p.grad_req = 'add'
+    else:
+        logging.info("Enabled manual accumulation")
 
     train_begin_time = time.time()
     begin_time = time.time()
@@ -325,16 +346,17 @@ def train(data_train, data_eval, model):
     parallel_model = DataParallelBERT(model, trainer=fp16_trainer)
     num_ctxes = len(ctxs)
     parallel = nlp.utils.Parallel(num_ctxes if num_ctxes > 1 else 0, parallel_model)
+    acc_grad_dict = None
 
-    sync_point = mx.nd.ones((1), ctx=mx.gpu(local_rank))
+    eval_mlm_loss = mx.nd.ones((1), ctx=mx.gpu(local_rank))
     if backend == 'byteps':
         logging.info('Broadcast local_num_masks tensor')
         bps.byteps_declare_tensor(local_num_masks, "local_num_masks")
         bps.byteps_push_pull(local_num_masks, is_average=False, name="local_num_masks", priority=0)
         local_num_masks.wait_to_read()
-        bps.byteps_declare_tensor(sync_point, "sync_point")
-        bps.byteps_push_pull(sync_point, is_average=False, name="sync_point", priority=0)
-        sync_point.wait_to_read()
+        bps.byteps_declare_tensor(eval_mlm_loss, "eval_mlm_loss")
+        bps.byteps_push_pull(eval_mlm_loss, is_average=True, name="eval_mlm_loss", priority=0)
+        eval_mlm_loss.wait_to_read()
         bps.byteps_declare_tensor(local_mlm_loss, "local_mlm_loss")
         bps.byteps_push_pull(local_mlm_loss, is_average=False, name="local_mlm_loss", priority=0)
         local_mlm_loss.wait_to_read()
@@ -352,6 +374,7 @@ def train(data_train, data_eval, model):
         data_train_iter = iter(data_train)
         end_of_batch = False
         next_data_batch = next(data_train_iter)
+        logging.info('Reading data batches from a new file now')
         while not end_of_batch:
             data_batch = next_data_batch
             if step_num >= num_train_steps:
@@ -359,8 +382,9 @@ def train(data_train, data_eval, model):
             if batch_num % accumulate == 0:
                 step_num += 1
                 # if accumulate > 1, grad_req is set to 'add', and zero_grad is required
-                if accumulate > 1:
-                    param_dict.zero_grad()
+                if not int(os.environ.get('MANUAL_ACC', False)):
+                    if accumulate > 1:
+                        param_dict.zero_grad()
                 # update learning rate
                 if step_num <= num_warmup_steps:
                     new_lr = lr * step_num / num_warmup_steps
@@ -406,8 +430,16 @@ def train(data_train, data_eval, model):
             except StopIteration:
                 end_of_batch = True
 
+            if int(os.environ.get('MANUAL_ACC', False)):
+                if acc_grad_dict == None:
+                    acc_grad_dict = {k: [mx.nd.zeros_like(v.grad(context)) for context in ctxs] for k, v in model.collect_params().items() if v.grad_req != 'null'}
+                else:
+                    grad_fn(model, acc_grad_dict, ctxs, req='add')
+
             # update
             if (batch_num + 1) % accumulate == 0:
+                if int(os.environ.get('MANUAL_ACC', False)):
+                    grad_fn(model, acc_grad_dict, ctxs, req='assign')
                 if backend == 'horovod':
                     hvd.allreduce_(local_mlm_loss, average=False, name='local_mlm_loss')
                     hvd.allreduce_(local_num_masks, average=False, name='local_num_masks')
@@ -422,6 +454,8 @@ def train(data_train, data_eval, model):
                 # because byteps and horovod implicitly set scale /= num_workers
                 fp16_trainer.step(local_num_masks / num_workers, max_norm=local_num_masks,
                                   num_ctxs=len(ctxs) * num_workers)
+                if int(os.environ.get('MANUAL_ACC', False)):
+                    grad_fn(model, acc_grad_dict, ctxs, req='zero')
                 local_num_masks, local_mlm_loss = 0, 0
             # update metrics
             if args.no_compute_acc:
@@ -543,12 +577,12 @@ if __name__ == '__main__':
         dataset_eval = get_pretrain_data_npz(data_eval, batch_size_eval,
                                              len(ctxs), shuffle, 1, vocab)
 
-        evaluate(dataset_eval, model, ctxs, args.log_interval, args.dtype, local_rank, 8)
+        eval_mlm_loss = evaluate(dataset_eval, model, ctxs, args.log_interval, args.dtype, local_rank, 8)
     mx.nd.waitall()
     if backend == 'horovod':
-        hvd.allreduce_(sync_point, average=False, name='sync_point')
+        hvd.allreduce_(eval_mlm_loss, average=False, name='eval_mlm_loss')
     elif backend == 'byteps':
-        bps.byteps_push_pull(sync_point, is_average=False,
-                             name="sync_point", priority=0)
-    sync_point.wait_to_read()
-    logging.info("Done")
+        bps.byteps_push_pull(eval_mlm_loss, is_average=True,
+                             name="eval_mlm_loss", priority=0)
+    eval_mlm_loss.wait_to_read()
+    logging.info("Done. Eval loss = {}".format(eval_mlm_loss.asscalar()))

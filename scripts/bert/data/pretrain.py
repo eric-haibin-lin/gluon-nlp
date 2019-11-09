@@ -53,7 +53,7 @@ class BERTSamplerFn(SamplerFn):
                                               num_buckets=self._num_buckets,
                                               ratio=0,
                                               shuffle=self._shuffle)
-        logging.debug('Sampler created for a new dataset:\n%s', sampler.stats())
+        # logging.debug('Sampler created for a new dataset:\n%s', sampler.stats())
         return sampler
 
 class BERTDataLoaderFn(DataLoaderFn):

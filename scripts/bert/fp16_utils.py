@@ -162,6 +162,11 @@ class LAMB2(Optimizer):
             self._scale_norm = True
         else:
             self._scale_norm = False
+        if int(os.environ.get('L1_NORM', False)):
+            logging.info("use l1 norm for scaling ")
+            self._l1_norm = True
+        else:
+            self._l1_norm = False
         logging.info('attrs = {}'.format(str(self.__dict__)))
         self._logged_missing_key = False
 
@@ -198,7 +203,10 @@ class LAMB2(Optimizer):
             # preprocess grad
             grad *= self.rescale_grad
             if self._scale_norm:
-                grad /= grad.norm()
+                if self._l1_norm:
+                    grad /= grad.norm(ord=1)
+                else:
+                    grad /= grad.norm()
             if self.clip_gradient is not None:
                 grad = clip(grad, -self.clip_gradient, self.clip_gradient)
 

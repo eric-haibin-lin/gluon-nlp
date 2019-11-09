@@ -40,6 +40,56 @@ __all__ = ['get_model_loss', 'get_pretrain_data_npz', 'get_dummy_dataloader',
            'save_parameters', 'save_states', 'evaluate', 'split_and_load',
            'get_pretrain_data_text', 'generate_dev_set', 'profile']
 
+class FP32LayerNorm(mx.gluon.nn.LayerNorm):
+    """BERT style Layer Normalization.
+
+    Epsilon is added inside the square root and set to 1e-12 by default.
+
+    Inputs:
+        - **data**: input tensor with arbitrary shape.
+        - **out**: output tensor with the same shape as `data`.
+    """
+
+    def __init__(self, epsilon=1e-12, in_channels=0, prefix=None, params=None):
+        super(FP32LayerNorm, self).__init__(epsilon=epsilon, in_channels=in_channels,
+                                            prefix=prefix, params=params)
+    def cast(self, dtype):
+        logging.info("Using FP32 layernorm")
+
+    def hybrid_forward(self, F, data, gamma, beta):
+        """forward computation."""
+        return F.LayerNorm(data.astype('float32'), gamma=gamma, beta=beta, axis=self._axis, eps=self._epsilon).astype('float16')
+
+if int(os.environ.get('FP32_LN', False)):
+    nlp.model.bert.BERTLayerNorm = FP32LayerNorm
+
+def _fp32_masked_softmax(F, att_score, mask, dtype):
+    """Ignore the masked elements when calculating the softmax
+
+    Parameters
+    ----------
+    F : symbol or ndarray
+    att_score : Symborl or NDArray
+        Shape (batch_size, query_length, memory_length)
+    mask : Symbol or NDArray or None
+        Shape (batch_size, query_length, memory_length)
+    Returns
+    -------
+    att_weights : Symborl or NDArray
+        Shape (batch_size, query_length, memory_length)
+    """
+    # Fill in the masked scores with a very small value
+    logging.info("Using FP32 SoftMax")
+    neg = -1e18
+    mask = mask.astype('float32')
+    att_score = att_score.astype('float32')
+    att_score = F.where(mask, att_score, neg * F.ones_like(att_score))
+    att_weights = F.softmax(att_score, axis=-1) * mask
+    return att_weights.astype('float16')
+
+if int(os.environ.get('FP32_SM', False)):
+    nlp.model.attention_cell._masked_softmax = _fp32_masked_softmax
+
 class ShuffleSplitSampler(Sampler):
     """Split the dataset into `num_parts` parts and randomly sample from the part
     with index `part_index`.
@@ -79,6 +129,16 @@ class ShuffleSplitSampler(Sampler):
     def __len__(self):
         return self._end - self._start
 
+class RepeatSplitSampler(nlp.data.SplitSampler):
+    def __init__(self, length, num_parts=1, part_index=0, repeat=40):
+        super(RepeatSplitSampler, self).__init__(length, num_parts=num_parts, part_index=part_index)
+        self.repeat = repeat
+
+    def __iter__(self):
+        l = []
+        for i in range(self.repeat):
+            l.extend(list(super(RepeatSplitSampler, self).__iter__()))
+        return iter(l)
 
 def get_model_loss(ctx, model, pretrained, dataset_name, vocab, dtype,
                    ckpt_dir=None, start_step=None):
@@ -185,7 +245,9 @@ class BERTPretrainDataset(mx.gluon.data.ArrayDataset):
                  vocab, num_workers=1, worker_pool=None):
         logging.debug('start to load file %s ...', filename)
         dupe_factor = 1
-        instances = create_training_instances(([filename], tokenizer, max_seq_length,
+        if not isinstance(filename, (list, tuple)):
+            filename = [filename]
+        instances = create_training_instances((filename, tokenizer, max_seq_length,
                                                short_seq_prob, masked_lm_prob,
                                                max_predictions_per_seq,
                                                whole_word_mask, vocab,
@@ -243,7 +305,10 @@ def get_pretrain_data_text(data, batch_size, num_ctxes, shuffle,
     sampler_fn = BERTSamplerFn(batch_size, shuffle, num_ctxes, num_buckets)
     dataloader_fn = BERTDataLoaderFn(num_ctxes, vocab)
 
-    file_sampler_cls = nlp.data.SplitSampler
+    if int(os.environ.get('REPEAT_SAMPLER', False)):
+        file_sampler_cls = RepeatSplitSampler
+    else:
+        file_sampler_cls = nlp.data.SplitSampler
     if int(os.environ.get('EVEN_SHUFFLE', False)):
         file_sampler_cls = ShuffleSplitSampler
     split_sampler = file_sampler_cls(num_files, num_parts=num_parts, part_index=part_idx)
@@ -466,6 +531,7 @@ def evaluate(data_eval, model, ctx, log_interval, dtype, rank, num_workers):
                      .format(total_mlm_loss.asscalar(), mlm_metric.get_global()[1] * 100,
                              total_nsp_loss.asscalar(), nsp_metric.get_global()[1] * 100))
         logging.info('Eval cost={:.1f}s'.format(eval_end_time - eval_begin_time))
+    return total_mlm_loss
 
 
 def generate_dev_set(tokenizer, vocab, cache_file, args):
