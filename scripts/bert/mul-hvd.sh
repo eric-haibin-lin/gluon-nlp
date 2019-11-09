@@ -52,7 +52,7 @@ mpirun -np $NP --hostfile $HOST -display-allocation --allow-run-as-root \
 	    --model $MODEL \
 	    --max_seq_length $MAX_SEQ_LENGTH \
 	    --max_predictions_per_seq $MAX_PREDICTIONS_PER_SEQ \
-	    --num_data_workers 8 \
+	    --num_data_workers $NUM_DATA_THREAD \
             --eval_interval $EVALINTERVAL \
-	    --no_compute_acc --raw \
+	    --no_compute_acc \
 	    --comm_backend horovod --log_interval $LOGINTERVAL $OPTIONS 2>&1 | tee -a mpi.log

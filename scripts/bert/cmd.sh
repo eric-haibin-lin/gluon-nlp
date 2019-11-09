@@ -15,6 +15,7 @@ export DATAEVAL="${DATAEVAL:-$DATA_HOME/book-corpus/book-corpus-large-split/*.de
 export NO_SHARD="${NO_SHARD:-0}"
 export RAW="${RAW:-1}"
 export EVALRAW="${EVALRAW:-0}"
+export NUM_DATA_THREAD="${NUM_DATA_THREAD:-8}"
 
 # only used in a docker container
 export USE_DOCKER=0
