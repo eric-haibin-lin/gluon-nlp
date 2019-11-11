@@ -103,6 +103,8 @@ class _MultiWorkerIter:
         # pre-fetch
         for _ in range(self._prefetch):
             self._push_next_dataset()
+        self._max_repeat = 8
+        self._repeat = 0
 
     def _push_next_dataset(self):
         """Assign next dataset workload to workers."""
@@ -148,6 +150,7 @@ class _MultiWorkerIter:
 
     def __next__(self):
         """Next mini-batch"""
+        repeat_npz = int(os.environ.get('REPEAT_NPZ', False))
         while True:
             if self._dataloader_ref is None:
                 # load next dataset and create a data loader
@@ -165,8 +168,15 @@ class _MultiWorkerIter:
                 result = next(self._dataloader)
                 return result
             except StopIteration:
-                self._dataloader = None
-                self._dataloader_ref = None
+                if repeat_npz:
+                    self._dataloader = iter(self._dataloader_ref)
+                    self._repeat += 1
+                    print('__next__: new iter repeat', self._repeat)
+                    if self._repeat >= self._max_repeat:
+                        raise StopIteration
+                else:
+                    self._dataloader_ref = None
+                    self._dataloader = None
 
     def next(self):
         """Next mini-batch"""
