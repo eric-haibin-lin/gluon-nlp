@@ -55,4 +55,4 @@ mpirun -np $NP --hostfile $HOST -display-allocation --allow-run-as-root \
 	    --num_data_workers $NUM_DATA_THREAD \
             --eval_interval $EVALINTERVAL \
 	    --no_compute_acc \
-	    --comm_backend horovod --log_interval $LOGINTERVAL $OPTIONS 2>&1 | tee -a mpi.log
+	    --comm_backend horovod --log_interval $LOGINTERVAL $OPTIONS 2>&1 | tee -a $CKPTDIR/mpi.log
