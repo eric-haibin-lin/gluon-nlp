@@ -32,6 +32,7 @@ export MXNET_SAFE_ACCUMULATION="${MXNET_SAFE_ACCUMULATION:-1}"
 export OPTIONS="${OPTIONS:- }"
 export DATA="${DATA:-/data/book-corpus/book-corpus-large-split/*.train,/data/enwiki/enwiki-feb-doc-split/*.train}"
 export DATAEVAL="${DATAEVAL:-/data/book-corpus/book-corpus-large-split/*.test,/data/enwiki/enwiki-feb-doc-split/*.test}"
+export NUM_DATA_THREAD="${NUM_DATA_THREAD:-8}"
 
 echo $NVIDIA_VISIBLE_DEVICES
 mkdir -p $CKPTDIR
@@ -53,6 +54,6 @@ python3 -u $BPS_HOME/launcher/launch.py \
 	    --model $MODEL \
 	    --max_seq_length $MAX_SEQ_LENGTH \
 	    --max_predictions_per_seq $MAX_PREDICTIONS_PER_SEQ \
-	    --num_data_workers 8 \
+	    --num_data_workers $NUM_DATA_THREAD \
 	    --no_compute_acc \
 	    --comm_backend byteps --log_interval $LOGINTERVAL $OPTIONS > $CKPTDIR/std.log.$DMLC_WORKER_ID
