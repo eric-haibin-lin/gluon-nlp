@@ -58,6 +58,7 @@ class FP32LayerNorm(mx.gluon.nn.LayerNorm):
 
     def hybrid_forward(self, F, data, gamma, beta):
         """forward computation."""
+        logging.info("Using FP32 layernorm")
         return F.LayerNorm(data.astype('float32'), gamma=gamma, beta=beta, axis=self._axis, eps=self._epsilon).astype('float16')
 
 if int(os.environ.get('FP32_LN', False)):
@@ -128,6 +129,40 @@ class ShuffleSplitSampler(Sampler):
 
     def __len__(self):
         return self._end - self._start
+
+class BERTEncoder2(nlp.model.transformer.BaseTransformerEncoder):
+    """Structure of the BERT Encoder.
+    """
+
+    def __init__(self, attention_cell='multi_head', num_layers=2,
+                 units=512, hidden_size=2048, max_length=50,
+                 num_heads=4, scaled=True, dropout=0.0,
+                 use_residual=True, output_attention=False, output_all_encodings=False,
+                 weight_initializer=None, bias_initializer='zeros',
+                 prefix=None, params=None, activation='gelu', layer_norm_eps=None):
+        logging.info('Use BERTEncoder2 with embed_dropout = 0, use_layer_norm_before_dropout=True')
+        super(BERTEncoder2, self).__init__(attention_cell=attention_cell,
+                                           num_layers=num_layers, units=units,
+                                           hidden_size=hidden_size, max_length=max_length,
+                                           num_heads=num_heads, scaled=scaled, dropout=dropout,
+                                           use_residual=use_residual,
+                                           output_attention=output_attention,
+                                           output_all_encodings=output_all_encodings,
+                                           weight_initializer=weight_initializer,
+                                           bias_initializer=bias_initializer,
+                                           prefix=prefix, params=params,
+                                           # extra configurations for BERT
+                                           positional_weight='learned',
+                                           use_bert_encoder=True,
+                                           use_layer_norm_before_dropout=True,
+                                           scale_embed=False,
+                                           activation=activation,
+                                           layer_norm_eps=layer_norm_eps)
+
+if int(os.environ.get('FIX_BERT_ENCODER', False)):
+    nlp.model.bert.BERTEncoder = BERTEncoder2
+    nlp.model.bert.bert_24_1024_16_hparams['embed_dropout'] = 0.0
+
 
 class RepeatSplitSampler(nlp.data.SplitSampler):
     def __init__(self, length, num_parts=1, part_index=0, repeat=40):
