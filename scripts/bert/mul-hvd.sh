@@ -35,6 +35,7 @@ mpirun -np $NP --hostfile $HOST -display-allocation --allow-run-as-root \
             -x SKIP_STATE_LOADING=$SKIP_STATE_LOADING \
             -x REPEAT_SAMPLER=$REPEAT_SAMPLER \
             -x SCALE_NORM=$SCALE_NORM \
+            -x MXNET_USE_FUSION=0 \
             -x FIX_BERT_ENCODER=1 \
             -x HD5=1 \
             -x NO_SHARD=$NO_SHARD \

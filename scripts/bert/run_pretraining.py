@@ -27,7 +27,6 @@ This example shows how to pre-train a BERT model with Gluon NLP Toolkit.
 # specific language governing permissions and limitations
 # under the License.
 # pylint:disable=redefined-outer-name,logging-format-interpolation
-
 import os
 import random
 import warnings

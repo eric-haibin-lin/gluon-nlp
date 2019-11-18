@@ -36,7 +36,7 @@ export SKIP_STATE_LOADING=0
 export REPEAT_SAMPLER=1
 export FORCE_WD=0
 export USE_PROJ=0
-export DTYPE=float16
+export DTYPE=float32
 export MODEL=bert_24_1024_16
 export CKPTINTERVAL=300000000
 export HIERARCHICAL=0
@@ -76,16 +76,24 @@ if [ "$EVALRAW" = "0" ]; then
     export OPTIONS="$OPTIONS --eval_use_npz"
 fi
 
-# export OPTIONS="$OPTIONS --start_step $NUMSTEPS"
+
+# export OPTIONS="$OPTIONS --start_step 1564" #$NUMSTEPS"
 
 #################################################################
 # 1) BERT pre-train phase 1 (with seq-len = 128)
 if [ "$NP" = "1" ]; then
-    BS=64 ACC=1 MAX_SEQ_LENGTH=128 MAX_PREDICTIONS_PER_SEQ=20 LR=0.0001 WARMUP_RATIO=0.2 bash mul-hvd.sh
+    BS=32 ACC=1 MAX_SEQ_LENGTH=128 MAX_PREDICTIONS_PER_SEQ=20 LR=0.0001 WARMUP_RATIO=0.2 bash mul-hvd.sh
+    exit
+    BS=1 ACC=1 MAX_SEQ_LENGTH=512 MAX_PREDICTIONS_PER_SEQ=80 LR=0.0001 WARMUP_RATIO=0.2 bash mul-hvd.sh
 elif [ "$NP" = "8" ]; then
     BS=512 ACC=1 MAX_SEQ_LENGTH=128 MAX_PREDICTIONS_PER_SEQ=20 LR=0.005 WARMUP_RATIO=0.2 bash mul-hvd.sh
+elif [ "$NP" = "128" ]; then
+    #BS=65536 ACC=8 MAX_SEQ_LENGTH=128 MAX_PREDICTIONS_PER_SEQ=20 LR=0.006 WARMUP_RATIO=0.2843 bash mul-hvd.sh
+    LOGINTERVAL=20 NUMSTEPS=15625 BS=32768 ACC=8 MAX_SEQ_LENGTH=128 MAX_PREDICTIONS_PER_SEQ=20 LR=0.005 WARMUP_RATIO=0.2 bash mul-hvd.sh
+    echo 'DONE phase1'
 elif [ "$NP" = "256" ]; then
-    BS=65536 ACC=4 MAX_SEQ_LENGTH=128 MAX_PREDICTIONS_PER_SEQ=20 LR=0.006 WARMUP_RATIO=0.2843 bash mul-hvd.sh
+    #BS=65536 ACC=8 MAX_SEQ_LENGTH=128 MAX_PREDICTIONS_PER_SEQ=20 LR=0.006 WARMUP_RATIO=0.2843 bash mul-hvd.sh
+    LOGINTERVAL=20 NUMSTEPS=15625 BS=32768 ACC=4 MAX_SEQ_LENGTH=128 MAX_PREDICTIONS_PER_SEQ=20 LR=0.005 WARMUP_RATIO=0.2 bash mul-hvd.sh
     echo 'DONE phase1'
 fi
 #################################################################
