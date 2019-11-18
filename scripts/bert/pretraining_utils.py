@@ -495,7 +495,7 @@ class BERTForPretrain(mx.gluon.Block):
         ls1 = self.mlm_loss(decoded.astype('float32', copy=False),
                             masked_id, masked_weight.reshape((-1, 1)))
         ls2 = self.nsp_loss(classified.astype('float32', copy=False), next_sentence_label)
-        ls1 = ls1.sum()
+        ls1 = ls1.sum() / (num_masks + 1e-7)
         ls2 = ls2.mean()
         return classified, decoded, ls1, ls2, num_masks
 
