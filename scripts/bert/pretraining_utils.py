@@ -536,7 +536,7 @@ def evaluate(data_eval, model, ctx, log_interval, dtype, rank, num_workers):
             mask_weight_list.append(masked_weight)
 
             valid_length = valid_length.astype('float32', copy=False)
-            running_mlm_loss += (ls1 / num_masks).as_in_context(mx.cpu())
+            running_mlm_loss += ls1.as_in_context(mx.cpu())
             running_nsp_loss += ls2.as_in_context(mx.cpu())
             running_num_tks += valid_length.sum().as_in_context(mx.cpu())
         nsp_metric.update(ns_label_list, ns_pred_list)

@@ -36,6 +36,7 @@ import time
 import argparse
 
 import mxnet as mx
+
 import gluonnlp as nlp
 try:
     import horovod.mxnet as hvd
