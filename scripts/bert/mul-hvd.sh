@@ -32,6 +32,8 @@ mpirun -np $NP --hostfile $HOST -display-allocation --allow-run-as-root \
             -x LAMB_BULK=$LAMB_BULK \
             -x EPS_AFTER_SQRT=$EPS_AFTER_SQRT \
             -x SKIP_GLOBAL_CLIP=$SKIP_GLOBAL_CLIP \
+            -x FP32_LN=$FP32_LN \
+            -x FP32_SM=$FP32_SM \
             -x PT_DECAY=$PT_DECAY \
             -x SKIP_STATE_LOADING=$SKIP_STATE_LOADING \
             -x RESCALE_FAC=$RESCALE_FAC \

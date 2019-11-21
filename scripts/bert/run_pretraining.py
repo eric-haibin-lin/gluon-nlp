@@ -428,7 +428,7 @@ def train(data_train, data_eval, model):
     logging.info('Generating the first batch of data, which may take a few minutes ...')
     if int(os.environ.get('HD5', False)):
         logging.info('using HD5 dataset')
-        data_train = get_hd5_loader(args.data, rank, batch_size, args.max_predictions_per_seq)
+        data_train = get_hd5_loader(args.data, rank, batch_size, args.max_predictions_per_seq, True)
 
     while step_num < num_train_steps:
 
@@ -439,38 +439,12 @@ def train(data_train, data_eval, model):
         while not end_of_batch:
             data_batch = next_data_batch
             if int(os.environ.get('HD5', False)):
-                max_pred_length = args.max_predictions_per_seq
-                my_batch = data_batch
-                if my_batch[0].shape[0] != batch_size:
+                from pretraining_utils import convert_pytorch_to_mxnet
+                data_batch = convert_pytorch_to_mxnet(args, data_batch, batch_size)
+                if data_batch is None:
                     end_of_batch = True
                     logging.info('new batch size: {}'.format(batch_size))
                     continue
-                my_input_ids, my_segment_ids, my_input_mask, my_masked_lm_labels, my_next_sentence_labels = my_batch
-                my_input_ids = my_input_ids.numpy()
-                my_segment_ids = my_segment_ids.numpy()
-                my_input_mask = my_input_mask.numpy()
-                my_masked_lm_labels = my_masked_lm_labels.numpy()
-                my_next_sentence_labels = my_next_sentence_labels.numpy()
-
-                nd_input_ids = mx.nd.array(my_input_ids, dtype=my_input_ids.dtype)
-                nd_segment_ids = mx.nd.array(my_segment_ids, dtype=my_segment_ids.dtype)
-                nd_valid_length = mx.nd.array(my_input_mask.sum(axis=1), dtype='float32')
-                # nd_masked_id =
-                nd_next_sentence_label = mx.nd.array(my_next_sentence_labels, dtype='float32')
-                np_masked_position = np.zeros((batch_size, max_pred_length))
-                np_masked_id = np.zeros((batch_size, max_pred_length))
-                np_masked_weight = np.zeros((batch_size, max_pred_length))
-                for i in range(batch_size):
-                    row = my_masked_lm_labels[i]
-                    idx = (row + 1).nonzero()[0]
-                    np_masked_id[i][:len(idx)] = row[idx]
-                    np_masked_position[i][:len(idx)] = idx
-                    np_masked_weight[i][:len(idx)] = 1
-                nd_masked_position = mx.nd.array(np_masked_position)
-                nd_masked_id = mx.nd.array(np_masked_id)
-                nd_masked_weight = mx.nd.array(np_masked_weight)
-                data_batch = [nd_input_ids, nd_masked_id, nd_masked_position, nd_masked_weight, \
-                            nd_next_sentence_label, nd_segment_ids, nd_valid_length]
 
             if step_num >= num_train_steps:
                 break
@@ -585,7 +559,7 @@ def train(data_train, data_eval, model):
                 dataset_eval = get_pretrain_data_npz(data_eval, batch_size_eval,
                                                      1, False, 1, vocab)
                 # TODO(haibin) replace with local-size
-                evaluate(dataset_eval, model, ctxs, args.log_interval, args.dtype, local_rank, 8)
+                evaluate(dataset_eval, model, ctxs, args, batch_size_eval) #args.log_interval, args.dtype, local_rank, 8, args)
 
             batch_num += 1
 
@@ -672,7 +646,7 @@ if __name__ == '__main__':
         dataset_eval = get_pretrain_data_npz(data_eval, batch_size_eval,
                                              len(ctxs), shuffle, 1, vocab)
 
-        eval_mlm_loss = evaluate(dataset_eval, model, ctxs, args.log_interval, args.dtype, local_rank, 8)
+        eval_mlm_loss = evaluate(dataset_eval, model, ctxs, args, batch_size_eval) # args.log_interval, args.dtype, local_rank, 8)
     mx.nd.waitall()
     if backend == 'horovod':
         hvd.allreduce_(eval_mlm_loss, average=False, name='eval_mlm_loss')

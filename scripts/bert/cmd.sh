@@ -10,15 +10,20 @@ export NP="${NP:-8}"
 export CKPTDIR="${CKPTDIR:-./test-ckpt}"
 export OPTIMIZER="${OPTIMIZER:-lamb2}"
 export COMPLETE_TRAIN="${COMPLETE_TRAIN:-0}"
-export DATA="${DATA:-$DATA_HOME/book-corpus/book-corpus-large-split/*.train,$DATA_HOME/enwiki/enwiki-feb-doc-split/*.train}"
-export DATAEVAL="${DATAEVAL:-$DATA_HOME/book-corpus/book-corpus-large-split/*.dev,$DATA_HOME/enwiki/enwiki-feb-doc-split/*.dev}"
-export DATAPHASE2="${DATAPHASE2:-$DATA_HOME/book-corpus/book-corpus-large-split/*.train,$DATA_HOME/enwiki/enwiki-feb-doc-split/*.train}"
+
+#export DATA="${DATA:-$DATA_HOME/book-corpus/book-corpus-large-split/*.train,$DATA_HOME/enwiki/enwiki-feb-doc-split/*.train}"
+export DATA="${DATA:-/fsx/datasets/hdf5_lower_case_1_seq_len_128_max_pred_20_masked_lm_prob_0.15_random_seed_12345_dupe_factor_5/books_wiki_en_corpus_train/}"
+#export DATAEVAL="${DATAEVAL:-$DATA_HOME/book-corpus/book-corpus-large-split/*.dev,$DATA_HOME/enwiki/enwiki-feb-doc-split/*.dev}"
+export DATAEVAL="${DATAEVAL:-/fsx/datasets/hdf5_lower_case_1_seq_len_128_max_pred_20_masked_lm_prob_0.15_random_seed_12345_dupe_factor_5/books_wiki_en_corpus_test/}"
+#export DATAPHASE2="${DATAPHASE2:-$DATA_HOME/book-corpus/book-corpus-large-split/*.train,$DATA_HOME/enwiki/enwiki-feb-doc-split/*.train}"
+export DATAPHASE2="${DATAPHASE2:-/fsx/datasets/hdf5_lower_case_1_seq_len_512_max_pred_80_masked_lm_prob_0.15_random_seed_12345_dupe_factor_5/books_wiki_en_corpus_train/}"
+
 export NO_SHARD="${NO_SHARD:-0}"
 export RAW="${RAW:-1}"
 export EVALRAW="${EVALRAW:-0}"
 export NUM_DATA_THREAD="${NUM_DATA_THREAD:-8}"
-export SCALE_NORM="${SCALE_NORM:-1}"
-export SKIP_GLOBAL_CLIP="${SKIP_GLOBAL_CLIP:-1}"
+export SCALE_NORM="${SCALE_NORM:-0}"
+export SKIP_GLOBAL_CLIP="${SKIP_GLOBAL_CLIP:-0}"
 export PT_DECAY="${PT_DECAY:-1}"
 
 # only used in a docker container
@@ -37,6 +42,8 @@ export REPEAT_SAMPLER=1
 export FORCE_WD=0
 export USE_PROJ=0
 export DTYPE=float32
+export FP32_LN=0
+export FP32_SM=0
 export MODEL=bert_24_1024_16
 export CKPTINTERVAL=300000000
 export HIERARCHICAL=0
@@ -80,7 +87,7 @@ if [ "$EVALRAW" = "0" ]; then
 fi
 
 
-# export OPTIONS="$OPTIONS --start_step 1564" #$NUMSTEPS"
+#export OPTIONS="$OPTIONS --start_step 15625" #$NUMSTEPS"
 
 #################################################################
 # 1) BERT pre-train phase 1 (with seq-len = 128)
@@ -96,7 +103,7 @@ elif [ "$NP" = "128" ]; then
     echo 'DONE phase1'
 elif [ "$NP" = "256" ]; then
     #BS=65536 ACC=8 MAX_SEQ_LENGTH=128 MAX_PREDICTIONS_PER_SEQ=20 LR=0.006 WARMUP_RATIO=0.2843 bash mul-hvd.sh
-    LOGINTERVAL=20 NUMSTEPS=15625 BS=32768 ACC=4 MAX_SEQ_LENGTH=128 MAX_PREDICTIONS_PER_SEQ=20 LR=0.005 WARMUP_RATIO=0.2 bash mul-hvd.sh
+    LOGINTERVAL=10 NUMSTEPS=14063 BS=32768 ACC=4 MAX_SEQ_LENGTH=128 MAX_PREDICTIONS_PER_SEQ=20 LR=0.005 WARMUP_RATIO=0.2 bash mul-hvd.sh
     echo 'DONE phase1'
 fi
 #################################################################
