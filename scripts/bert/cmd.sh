@@ -45,6 +45,9 @@ export NO_DROPOUT=0
 export USE_BOUND=0
 export ADJUST_BOUND=0
 export WINDOW_SIZE=2000
+export USE_AMP=0
+export RESCALE_FAC="0"
+export MANUAL_ACC=0
 
 mkdir -p $CKPTDIR
 echo "==========================================================" >> $CKPTDIR/cmd.sh

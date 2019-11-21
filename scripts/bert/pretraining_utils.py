@@ -40,6 +40,30 @@ __all__ = ['get_model_loss', 'get_pretrain_data_npz', 'get_dummy_dataloader',
            'save_parameters', 'save_states', 'evaluate', 'split_and_load',
            'get_pretrain_data_text', 'generate_dev_set', 'profile']
 
+def _masked_softmax(F, att_score, mask, dtype):
+    """Ignore the masked elements when calculating the softmax
+
+    Parameters
+    ----------
+    F : symbol or ndarray
+    att_score : Symborl or NDArray
+        Shape (batch_size, query_length, memory_length)
+    mask : Symbol or NDArray or None
+        Shape (batch_size, query_length, memory_length)
+    Returns
+    -------
+    att_weights : Symborl or NDArray
+        Shape (batch_size, query_length, memory_length)
+    """
+    if mask is not None:
+        # Fill in the masked scores with a very small value
+        neg = -1e4
+        att_score = F.where(mask, att_score, neg * F.ones_like(att_score))
+        att_weights = F.softmax(att_score, axis=-1) * mask
+    else:
+        att_weights = F.softmax(att_score, axis=-1)
+    return att_weights
+
 class FP32LayerNorm(mx.gluon.nn.LayerNorm):
     """BERT style Layer Normalization.
 
@@ -63,6 +87,10 @@ class FP32LayerNorm(mx.gluon.nn.LayerNorm):
 
 if int(os.environ.get('FP32_LN', False)):
     nlp.model.bert.BERTLayerNorm = FP32LayerNorm
+
+if int(os.environ.get('SMALL_NEG', False)):
+    print("Using small NEG")
+    nlp.model.attention_cell._masked_softmax = _masked_softmax
 
 def _fp32_masked_softmax(F, att_score, mask, dtype):
     """Ignore the masked elements when calculating the softmax
@@ -221,7 +249,9 @@ def get_model_loss(ctx, model, pretrained, dataset_name, vocab, dtype,
             model.initialize(init=nlp.initializer.TruncNorm(0.02), ctx=ctx)
         else:
             model.initialize(init=mx.init.Normal(0.02), ctx=ctx)
-    model.cast(dtype)
+
+    if not int(os.environ.get('USE_AMP', False)):
+        model.cast(dtype)
 
     load_again = False
     if ckpt_dir and start_step:
@@ -234,11 +264,13 @@ def get_model_loss(ctx, model, pretrained, dataset_name, vocab, dtype,
     # losses
     nsp_loss = mx.gluon.loss.SoftmaxCELoss()
     mlm_loss = mx.gluon.loss.SoftmaxCELoss()
-    nsp_loss.hybridize(static_alloc=True, static_shape=True)
-    mlm_loss.hybridize(static_alloc=True, static_shape=True)
+    if not int(os.environ.get('USE_AMP', False)):
+        nsp_loss.hybridize(static_alloc=True, static_shape=True)
+        mlm_loss.hybridize(static_alloc=True, static_shape=True)
 
     model = BERTForPretrain(model, nsp_loss, mlm_loss, len(vocabulary))
-    model.hybridize(static_alloc=True, static_shape=True)
+    if not int(os.environ.get('USE_AMP', False)):
+        model.hybridize(static_alloc=True, static_shape=True)
 
     if load_again:
         param_path = os.path.join(ckpt_dir, '%07d.params'%start_step)

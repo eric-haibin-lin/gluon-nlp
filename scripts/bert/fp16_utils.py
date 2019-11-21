@@ -29,8 +29,8 @@ from mxnet.ndarray import square, power, sqrt, maximum, minimum, clip, where
 
 import math
 
-
 from mxnet.ndarray import square, power, sqrt, maximum, minimum, clip, where, norm, full
+
 
 def _projection(weight, var, alpha=0.1, iters=10, eps=1e-6):
     var /= NDArray.mean(var)
@@ -169,7 +169,38 @@ class LAMB2(Optimizer):
             self._l1_norm = False
         logging.info('attrs = {}'.format(str(self.__dict__)))
         self._logged_missing_key = False
+        self._writer = None
+        try:
+            if int(os.environ.get('USE_MXBOARD', False)):
+                import horovod.mxnet as hvd
+                from mxboard import SummaryWriter
+                if hvd.local_rank() == 0:
+                    self._writer = SummaryWriter(logdir='/fsx/debug-tf/logs')
+        except Exception:
+            pass
 
+    def _update_multi_precision(self, index, weight, grad, state):
+        """Updates the given parameter using the corresponding gradient and state.
+        Mixed precision version.
+        """
+        if self.multi_precision and weight.dtype == numpy.float16:
+            # Wrapper for mixed precision
+            weight_master_copy = state[0]
+            original_state = state[1]
+            grad32 = grad.astype(numpy.float32)
+            self.update(index, weight_master_copy, grad32, original_state)
+            cast(weight_master_copy, dtype=weight.dtype, out=weight)
+        else:
+            self.update(index, weight, grad, state)
+
+    def new_update_multi_precision(self, index, weight, grad, state):
+        if int(os.environ.get('USE_AMP', False)):
+            from mxnet.contrib import amp
+            skip_update = amp.amp._loss_scaler.wait_and_update
+            if not skip_update():
+                self._update_multi_precision(index, weight, grad, state)
+        else:
+            self._update_multi_precision(index, weight, grad, state)
 
     def create_state(self, index, weight):
         stype = weight.stype
@@ -387,16 +418,22 @@ class FP16Trainer:
 
     def backward(self, loss, verbose=False):
         """backward propagation with loss"""
-        with mx.autograd.record():
-            if isinstance(loss, (tuple, list)):
-                ls = [l * self._scaler.loss_scale for l in loss]
-            else:
-                ls = loss * self._scaler.loss_scale
-        if verbose:
-            #import byteps.mxnet as bps
-            #logging.info('{} loss scale = {}'.format(bps.rank(), self._scaler.loss_scale))
-            logging.info('loss scale = {}'.format(self._scaler.loss_scale))
-        mx.autograd.backward(ls)
+        if int(os.environ.get('USE_AMP', False)):
+            from mxnet.contrib import amp
+            with mx.autograd.record():
+                with amp.scale_loss(loss, self.fp32_trainer) as scaled_loss:
+                    mx.autograd.backward(scaled_loss)
+        else: 
+            with mx.autograd.record():
+                if isinstance(loss, (tuple, list)):
+                    ls = [l * self._scaler.loss_scale for l in loss]
+                else:
+                    ls = loss * self._scaler.loss_scale
+            if verbose:
+                #import byteps.mxnet as bps
+                #logging.info('{} loss scale = {}'.format(bps.rank(), self._scaler.loss_scale))
+                logging.info('loss scale = {}'.format(self._scaler.loss_scale))
+            mx.autograd.backward(ls)
 
     def step(self, batch_size, max_norm=None, num_ctxs=None, verbose=False):
         """Makes one step of parameter update. Should be called after
@@ -413,25 +450,34 @@ class FP16Trainer:
         if num_ctxs and num_ctxs > 1:
             if not int(os.environ.get('SKIP_COMM', False)):
                 self.fp32_trainer.allreduce_grads()
-        step_size = batch_size * self._scaler.loss_scale
+        use_amp = int(os.environ.get('USE_AMP', False))
+        if use_amp:
+            loss_scale = self.fp32_trainer._amp_loss_scaler.loss_scale
+            max_norm = max_norm * loss_scale
+            step_size = batch_size
+        else:
+            loss_scale = self._scaler.loss_scale
+            step_size = batch_size * self._scaler.loss_scale
+
+        if float(os.environ.get('RESCALE_FAC', False)):
+            step_size = step_size * float(os.environ.get('RESCALE_FAC', False))
+            loss_scale *= float(os.environ.get('RESCALE_FAC', False))
+
         if max_norm is not None:
-            _, ratio, is_finite = grad_global_norm(self.fp32_trainer._params,
-                                                   max_norm * self._scaler.loss_scale)
+            max_norm = max_norm * loss_scale
+            total_norm, ratio, is_finite = grad_global_norm(self.fp32_trainer._params,
+                                                            max_norm)
+            logging.info('ratio = {}, total_norm = {}'.format(ratio.asscalar(), total_norm.asscalar() / num_ctxs / loss_scale))
             if int(os.environ.get('SKIP_GLOBAL_CLIP', False)):
                 pass
             else:
                 step_size = ratio * step_size
-            if self._support_nan_check:
+
+            overflow = is_finite.asscalar() < 1
+            if not overflow or use_amp:
                 self.fp32_trainer.update(step_size)
-                overflow = is_finite.asscalar() < 1
-            else:
-                overflow = is_finite.asscalar() < 1
-                if verbose:
-                    import byteps.mxnet as bps
-                    logging.info('{} overflow = {}, ratio = {}'.format(bps.rank(), overflow, ratio.asscalar()))
-                if not overflow:
-                    self.fp32_trainer.update(step_size)
         else:
+            assert False
             # TODO(haibin) optimize the performance when max_norm is not present
             # sequentially adding isnan/isinf results may be slow
             if self._support_nan_check:

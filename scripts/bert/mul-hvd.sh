@@ -34,9 +34,12 @@ mpirun -np $NP --hostfile $HOST -display-allocation --allow-run-as-root \
             -x SKIP_GLOBAL_CLIP=$SKIP_GLOBAL_CLIP \
             -x PT_DECAY=$PT_DECAY \
             -x SKIP_STATE_LOADING=$SKIP_STATE_LOADING \
+            -x RESCALE_FAC=$RESCALE_FAC \
             -x REPEAT_SAMPLER=$REPEAT_SAMPLER \
             -x SCALE_NORM=$SCALE_NORM \
             -x MXNET_USE_FUSION=0 \
+            -x MANUAL_ACC=$MANUAL_ACC \
+            -x USE_AMP=$USE_AMP \
             -x FIX_BERT_ENCODER=1 \
             -x HD5=1 \
             -x NO_SHARD=$NO_SHARD \

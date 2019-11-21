@@ -46,6 +46,7 @@ try:
     import byteps.mxnet as bps
 except ImportError:
     pass
+from mxnet.contrib import amp
 
 from fp16_utils import FP16Trainer
 from pretraining_utils import get_model_loss, get_pretrain_data_npz, get_dummy_dataloader
@@ -162,6 +163,8 @@ class DataParallelBERT(nlp.utils.Parallelizable):
     def __init__(self, model, trainer):
         self._model = model
         self._trainer = trainer
+        if float(os.environ.get('RESCALE_FAC', False)):
+            logging.info("rescale_factor = {}".format(float(os.environ.get('RESCALE_FAC', False))))
 
     def forward_backward(self, x):
         """forward backward implementation"""
@@ -175,6 +178,8 @@ class DataParallelBERT(nlp.utils.Parallelizable):
             classified, decoded, ls1, ls2, num_masks = out
             ls = ls1 + ls2
             ls = ls / args.accumulate
+            if float(os.environ.get('RESCALE_FAC', False)):
+                ls = ls * float(os.environ.get('RESCALE_FAC', False))
         if self._trainer:
             self._trainer.backward(ls)
         else:
@@ -255,6 +260,44 @@ if int(os.environ.get('HD5', False)):
     from th import get_hd5_loader
     args.synthetic_data = True
 
+if int(os.environ.get('USE_AMP', False)):
+    fp16_fp32_func = [
+    # v1 - diverge
+    # v2 - diverge
+    # v3 - diverge
+    # v4 - diverge
+    'Cast',
+    'cast',
+    'all_finite',
+    'amp_cast',
+    'amp_multicast']
+
+    # v5 - diverge
+    wide_func = [
+    ]
+
+    amp.lists.symbol.FP32_FUNCS.extend(amp.lists.symbol.FP16_FP32_FUNCS)
+    amp.lists.symbol.FP32_FUNCS.extend(amp.lists.symbol.WIDEST_TYPE_CASTS)
+
+    for f in fp16_fp32_func:
+        amp.lists.symbol.FP32_FUNCS.remove(f)
+    # v7
+    #amp.lists.symbol.FP32_FUNCS.append('FullyConnected')
+    #amp.lists.symbol.FP16_FUNCS.remove('FullyConnected')
+    amp.lists.symbol.FP16_FP32_FUNCS = fp16_fp32_func
+    amp.lists.symbol.WIDEST_TYPE_CASTS = wide_func
+
+    # v9
+    amp.lists.symbol.FP32_FUNCS.append('FullyConnected')
+    amp.lists.symbol.FP16_FUNCS.remove('FullyConnected')
+    amp.init()
+    #amp.amp._loss_scaler._loss_scale = 2.**16
+    #amp.amp._loss_scaler._next_loss_scale = 2.**16
+    # v6 - diverges
+    amp.amp._loss_scaler._loss_scale = 1
+    amp.amp._loss_scaler._next_loss_scale = 1
+    logging.info('AMP set to {}'.format(amp.amp._loss_scaler._next_loss_scale))
+
 def grad_fn(model, acc_grad_dict, ctxs, req='zero'):
     for k, v in model.collect_params().items():
         if v.grad_req == 'null':
@@ -322,6 +365,9 @@ def train(data_train, data_eval, model):
             nlp.utils.load_states(trainer, state_path)
         else:
             logging.info('Skipping trainer state loading')
+
+    if int(os.environ.get('USE_AMP', False)):
+        amp.init_trainer(trainer)
 
     accumulate = args.accumulate
     num_train_steps = args.num_steps
@@ -531,9 +577,9 @@ def train(data_train, data_eval, model):
             # saving checkpoints
             if (step_num + 1) % args.ckpt_interval == 0 and (batch_num + 1) % accumulate == 0:
                 if is_master_node:
-                    save_states(step_num, trainer, args.ckpt_dir, local_rank)
                     if local_rank == 0:
                         save_parameters(step_num, model.bert, args.ckpt_dir)
+                    save_states(step_num, trainer, args.ckpt_dir, local_rank)
             if (step_num + 1) % args.eval_interval == 0 and data_eval and (batch_num + 1) % accumulate == 0:
                 # eval data is always based on a fixed npz file.
                 dataset_eval = get_pretrain_data_npz(data_eval, batch_size_eval,
