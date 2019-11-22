@@ -43,7 +43,7 @@ mpirun -np $NP --hostfile $HOST -display-allocation --allow-run-as-root \
             -x MANUAL_ACC=$MANUAL_ACC \
             -x USE_AMP=$USE_AMP \
             -x FIX_BERT_ENCODER=1 \
-            -x HD5=1 \
+            -x HD5=$HD5 \
             -x NO_SHARD=$NO_SHARD \
 	    --tag-output ompi_bind_DGX1.sh python3 run_pretraining.py \
 	    --data="$DATA" \

@@ -4,19 +4,20 @@
 # 3) BERT fine-tune on SQuAD. This requires the checkpoint from (2).
 export DATA_HOME=~/mxnet-data/bert-pretraining/datasets
 
-export DEBUG="${DEBUG:-1}"
-export HOST="${HOST:-hosts_32}"
-export NP="${NP:-8}"
-export CKPTDIR="${CKPTDIR:-./test-ckpt}"
+export DEBUG="${DEBUG:-0}"
+export HOST="${HOST:-hosts_64}"
+export NP="${NP:-512}"
+export CKPTDIR="${CKPTDIR:-/fsx/test-ckpt}"
 export OPTIMIZER="${OPTIMIZER:-lamb2}"
-export COMPLETE_TRAIN="${COMPLETE_TRAIN:-0}"
+export COMPLETE_TRAIN="${COMPLETE_TRAIN:-1}"
 
 #export DATA="${DATA:-$DATA_HOME/book-corpus/book-corpus-large-split/*.train,$DATA_HOME/enwiki/enwiki-feb-doc-split/*.train}"
-export DATA="${DATA:-/fsx/datasets/hdf5_lower_case_1_seq_len_128_max_pred_20_masked_lm_prob_0.15_random_seed_12345_dupe_factor_5/books_wiki_en_corpus_train/}"
 #export DATAEVAL="${DATAEVAL:-$DATA_HOME/book-corpus/book-corpus-large-split/*.dev,$DATA_HOME/enwiki/enwiki-feb-doc-split/*.dev}"
-export DATAEVAL="${DATAEVAL:-/fsx/datasets/hdf5_lower_case_1_seq_len_128_max_pred_20_masked_lm_prob_0.15_random_seed_12345_dupe_factor_5/books_wiki_en_corpus_test/}"
 #export DATAPHASE2="${DATAPHASE2:-$DATA_HOME/book-corpus/book-corpus-large-split/*.train,$DATA_HOME/enwiki/enwiki-feb-doc-split/*.train}"
-export DATAPHASE2="${DATAPHASE2:-/fsx/datasets/hdf5_lower_case_1_seq_len_512_max_pred_80_masked_lm_prob_0.15_random_seed_12345_dupe_factor_5/books_wiki_en_corpus_train/}"
+export DATA="${DATA:-/fsx/datasets/hdf5_lower_case_1_seq_len_128_max_pred_20_masked_lm_prob_0.15_random_seed_12345_dupe_factor_5_512_shard//books_wiki_en_corpus_train/}"
+export DATAEVAL="${DATAEVAL:-/fsx/datasets/hdf5_lower_case_1_seq_len_128_max_pred_20_masked_lm_prob_0.15_random_seed_12345_dupe_factor_5_512_shard//books_wiki_en_corpus_test/}"
+export DATAPHASE2="${DATAPHASE2:-/fsx/datasets/hdf5_lower_case_1_seq_len_512_max_pred_80_masked_lm_prob_0.15_random_seed_12345_dupe_factor_5_512_shard//books_wiki_en_corpus_train/}"
+export DATAPHASE2EVAL="${DATAPHASE2EVAL:-/fsx/datasets/hdf5_lower_case_1_seq_len_512_max_pred_80_masked_lm_prob_0.15_random_seed_12345_dupe_factor_5_512_shard//books_wiki_en_corpus_test/}"
 
 export NO_SHARD="${NO_SHARD:-0}"
 export RAW="${RAW:-1}"
@@ -37,11 +38,11 @@ export NCCLMINNRINGS=1
 export TRUNCATE_NORM=1
 export LAMB_BULK=60
 export EPS_AFTER_SQRT=1
-export SKIP_STATE_LOADING=0
+export SKIP_STATE_LOADING=1
 export REPEAT_SAMPLER=1
 export FORCE_WD=0
 export USE_PROJ=0
-export DTYPE=float32
+export DTYPE=float16
 export FP32_LN=0
 export FP32_SM=0
 export MODEL=bert_24_1024_16
@@ -55,6 +56,7 @@ export WINDOW_SIZE=2000
 export USE_AMP=0
 export RESCALE_FAC="0"
 export MANUAL_ACC=0
+export HD5=1
 
 mkdir -p $CKPTDIR
 echo "==========================================================" >> $CKPTDIR/cmd.sh
@@ -91,19 +93,14 @@ fi
 
 #################################################################
 # 1) BERT pre-train phase 1 (with seq-len = 128)
-if [ "$NP" = "1" ]; then
-    BS=32 ACC=1 MAX_SEQ_LENGTH=128 MAX_PREDICTIONS_PER_SEQ=20 LR=0.0001 WARMUP_RATIO=0.2 bash mul-hvd.sh
-    exit
-    BS=1 ACC=1 MAX_SEQ_LENGTH=512 MAX_PREDICTIONS_PER_SEQ=80 LR=0.0001 WARMUP_RATIO=0.2 bash mul-hvd.sh
-elif [ "$NP" = "8" ]; then
-    BS=512 ACC=1 MAX_SEQ_LENGTH=128 MAX_PREDICTIONS_PER_SEQ=20 LR=0.005 WARMUP_RATIO=0.2 bash mul-hvd.sh
-elif [ "$NP" = "128" ]; then
-    #BS=65536 ACC=8 MAX_SEQ_LENGTH=128 MAX_PREDICTIONS_PER_SEQ=20 LR=0.006 WARMUP_RATIO=0.2843 bash mul-hvd.sh
-    LOGINTERVAL=20 NUMSTEPS=15625 BS=32768 ACC=8 MAX_SEQ_LENGTH=128 MAX_PREDICTIONS_PER_SEQ=20 LR=0.005 WARMUP_RATIO=0.2 bash mul-hvd.sh
-    echo 'DONE phase1'
-elif [ "$NP" = "256" ]; then
+if [ "$NP" = "256" ]; then
     #BS=65536 ACC=8 MAX_SEQ_LENGTH=128 MAX_PREDICTIONS_PER_SEQ=20 LR=0.006 WARMUP_RATIO=0.2843 bash mul-hvd.sh
     LOGINTERVAL=10 NUMSTEPS=14063 BS=32768 ACC=4 MAX_SEQ_LENGTH=128 MAX_PREDICTIONS_PER_SEQ=20 LR=0.005 WARMUP_RATIO=0.2 bash mul-hvd.sh
+    echo 'DONE phase1'
+elif [ "$NP" = "512" ]; then
+    #BS=65536 ACC=8 MAX_SEQ_LENGTH=128 MAX_PREDICTIONS_PER_SEQ=20 LR=0.006 WARMUP_RATIO=0.2843 bash mul-hvd.sh
+    export NUMSTEPS=7038
+    LOGINTERVAL=10 BS=65536 ACC=2 MAX_SEQ_LENGTH=128 MAX_PREDICTIONS_PER_SEQ=20 LR=0.004 WARMUP_RATIO=0.444 bash mul-hvd.sh
     echo 'DONE phase1'
 fi
 #################################################################
@@ -126,28 +123,28 @@ sleep 5
 if [ "$DEBUG" = "1" ]; then
     export LOGINTERVAL=1
     export OPTIONS="--synthetic_data --verbose --phase2 --phase1_num_steps=$NUMSTEPS --start_step=$NUMSTEPS"
-    export NUMSTEPS=3
+    export NUMSTEPS=30000
 else
     export LOGINTERVAL=10
     export OPTIONS="--phase2 --phase1_num_steps=$NUMSTEPS --start_step=$NUMSTEPS"
-    export NUMSTEPS=1563
+    export NUMSTEPS=1564
 fi
 
 export DATA=$DATAPHASE2
-if [ "$NP" = "1" ]; then
-    BS=8 ACC=1 MAX_SEQ_LENGTH=512 MAX_PREDICTIONS_PER_SEQ=80 LR=0.005 WARMUP_RATIO=0.2 bash mul-hvd.sh
-elif [ "$NP" = "256" ]; then
+export DATAEVAL=$DATAPHASE2EVAL
+if [ "$NP" = "512" ]; then
     echo "$DATA"
-    BS=32768 ACC=16 MAX_SEQ_LENGTH=512 MAX_PREDICTIONS_PER_SEQ=80 LR=0.004 WARMUP_RATIO=0.128 bash mul-hvd.sh
+    echo "$DATAEVAL"
+    BS=32768 ACC=8 MAX_SEQ_LENGTH=512 MAX_PREDICTIONS_PER_SEQ=80 LR=0.004 WARMUP_RATIO=0.4 bash mul-hvd.sh
     echo 'DONE phase2'
 fi
-
 
 #################################################################
 
 
 #################################################################
 # 3) BERT fine-tune on SQuAD. This requires the checkpoint from (2).
+exit
 STEP_FORMATTED=$(printf "%07d" $NUMSTEPS)
 python3 finetune_squad.py --bert_model bert_24_1024_16 --pretrained_bert_parameters $CKPTDIR/$STEP_FORMATTED.params --output_dir $CKPTDIR --optimizer adam --accumulate 3 --batch_size 8 --lr 3e-5 --epochs 2 --gpu 0,1,2,3,4,5,6,7
 #################################################################

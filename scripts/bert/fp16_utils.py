@@ -474,6 +474,7 @@ class FP16Trainer:
                 step_size = ratio * step_size
 
             overflow = is_finite.asscalar() < 1
+            step_size = step_size.asscalar() if isinstance(step_size, mx.nd.NDArray) else step_size
             if not overflow or use_amp:
                 self.fp32_trainer.update(step_size)
         else:
