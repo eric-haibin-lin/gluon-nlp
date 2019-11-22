@@ -138,7 +138,8 @@ class LAMB2(Optimizer):
         logging.info(" bulk = " + str(self._bulk))
         self._verbose = verbose
         if int(os.environ.get('USE_BOUND', False)):
-            logging.info("using upper lower bound")
+            self.upper_bound = 10
+            logging.info("using upper lower bound {} {}".format(self.lower_bound, self.upper_bound))
             self._use_bound = True
         else:
             self._use_bound = False
@@ -167,8 +168,22 @@ class LAMB2(Optimizer):
             self._l1_norm = True
         else:
             self._l1_norm = False
+        if int(os.environ.get('CLIP_TRUST', False)):
+            logging.info("clip trust ratio")
+            self._clip_trust = True
+        else:
+            self._clip_trust = False
         logging.info('attrs = {}'.format(str(self.__dict__)))
         self._logged_missing_key = False
+        import horovod.mxnet as hvd
+        self._writer = None
+        #try:
+        #    from mxboard import SummaryWriter
+        #    if hvd.rank() == 0:
+        #        self._writer = SummaryWriter(logdir='/fsx/debug-tf/logs')
+        #except Exception:
+        #    pass
+
 
 
     def create_state(self, index, weight):
@@ -207,6 +222,9 @@ class LAMB2(Optimizer):
                     grad /= grad.norm(ord=1)
                 else:
                     grad /= grad.norm()
+            else:
+                if self._writer:
+                    self._writer.add_histogram(tag=name, values=grad.norm().asscalar(), bins=200, global_step=t)
             if self.clip_gradient is not None:
                 grad = clip(grad, -self.clip_gradient, self.clip_gradient)
 
@@ -234,6 +252,7 @@ class LAMB2(Optimizer):
                         if 'classifier' in name or 'cls' in name:
                             upper_bound = min(upper_bound, 0.04 * math.sqrt(weight.size))
                             # logging.info('name = {}, weight.size = {}, bound = {}'.format(name, weight.size, upper_bound))
+                    logging.info('name = {}, r1 = {}'.format(name, r1.asscalar()))
                     r1 = minimum(maximum(r1, self.lower_bound), upper_bound)
                 mean_hat = mean / (1. - power(self.beta1, t))
                 var_hat = var / (1. - power(self.beta2, t))
@@ -252,9 +271,12 @@ class LAMB2(Optimizer):
 
             # calculate lamb_trust_ratio
             ratio = r1 / r2
+            ones = ones_like(ratio)
+            if self._clip_trust:
+                ratio = min(ratio, 10 * ones)
             # becomes NaN if ratio == NaN or 0, otherwise 0
             nan_or_zero = 1 - ratio / ratio
-            r = where(nan_or_zero, ones_like(ratio), ratio)
+            r = where(nan_or_zero, ones, ratio)
             lr *= r
 
             # update weight
@@ -415,8 +437,9 @@ class FP16Trainer:
                 self.fp32_trainer.allreduce_grads()
         step_size = batch_size * self._scaler.loss_scale
         if max_norm is not None:
-            _, ratio, is_finite = grad_global_norm(self.fp32_trainer._params,
+            total_norm, ratio, is_finite = grad_global_norm(self.fp32_trainer._params,
                                                    max_norm * self._scaler.loss_scale)
+            logging.info('ratio = {}, total_norm = {}'.format(ratio.asscalar(), total_norm.asscalar() / num_ctxs))
             if int(os.environ.get('SKIP_GLOBAL_CLIP', False)):
                 pass
             else:

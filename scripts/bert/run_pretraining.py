@@ -27,6 +27,13 @@ This example shows how to pre-train a BERT model with Gluon NLP Toolkit.
 # specific language governing permissions and limitations
 # under the License.
 # pylint:disable=redefined-outer-name,logging-format-interpolation
+import torch
+from torch.utils.data import DataLoader, RandomSampler, SequentialSampler, Dataset
+import mxnet as mx
+import os
+import h5py
+import numpy as np
+from th import get_hd5_loader
 
 import os
 import random
@@ -174,6 +181,7 @@ class DataParallelBERT(nlp.utils.Parallelizable):
                               next_sentence_label, segment_id, valid_length)
             classified, decoded, ls1, ls2, num_masks = out
             ls = ls1 + ls2
+            ls = ls / args.accumulate
         if self._trainer:
             self._trainer.backward(ls)
         else:
@@ -191,7 +199,7 @@ def init_comm(backend):
         try:
             import horovod.mxnet as hvd
         except ImportError:
-            logging.info('horovod must be installed.')
+            print('horovod must be installed.')
             exit()
         hvd.init()
         store = None
@@ -204,7 +212,7 @@ def init_comm(backend):
         try:
             import byteps.mxnet as bps
         except ImportError:
-            logging.info('BytePS must be installed.')
+            print('BytePS must be installed.')
             exit()
         bps.init()
         store = None
@@ -290,6 +298,7 @@ def train(data_train, data_eval, model):
             loss_scale_param = {'scale_window': window_size, 'init_scale': 1}
         else:
             loss_scale_param = {'scale_window': 2000 / num_workers, 'init_scale': 1}
+            loss_scale_param = {'scale_window': 2000 / num_workers}#, 'init_scale': 1}
     else:
         loss_scale_param = None
 
@@ -369,6 +378,10 @@ def train(data_train, data_eval, model):
         trainer._init_params()
 
     logging.info('Generating the first batch of data, which may take a few minutes ...')
+    if int(os.environ.get('HD5', False)):
+        logging.info('using HD5 dataset')
+        data_train = get_hd5_loader(args.data, rank, batch_size, args.max_predictions_per_seq)
+
     while step_num < num_train_steps:
 
         data_train_iter = iter(data_train)
@@ -377,6 +390,40 @@ def train(data_train, data_eval, model):
         logging.info('Reading data batches from a new file now')
         while not end_of_batch:
             data_batch = next_data_batch
+            if int(os.environ.get('HD5', False)):
+                max_pred_length = args.max_predictions_per_seq
+                my_batch = data_batch
+                if my_batch[0].shape[0] != batch_size:
+                    end_of_batch = True
+                    logging.info('new batch size: {}'.format(batch_size))
+                    continue
+                my_input_ids, my_segment_ids, my_input_mask, my_masked_lm_labels, my_next_sentence_labels = my_batch
+                my_input_ids = my_input_ids.numpy()
+                my_segment_ids = my_segment_ids.numpy()
+                my_input_mask = my_input_mask.numpy()
+                my_masked_lm_labels = my_masked_lm_labels.numpy()
+                my_next_sentence_labels = my_next_sentence_labels.numpy()
+
+                nd_input_ids = mx.nd.array(my_input_ids, dtype=my_input_ids.dtype)
+                nd_segment_ids = mx.nd.array(my_segment_ids, dtype=my_segment_ids.dtype)
+                nd_valid_length = mx.nd.array(my_input_mask.sum(axis=1), dtype='float32')
+                # nd_masked_id =
+                nd_next_sentence_label = mx.nd.array(my_next_sentence_labels, dtype='float32')
+                np_masked_position = np.zeros((batch_size, max_pred_length))
+                np_masked_id = np.zeros((batch_size, max_pred_length))
+                np_masked_weight = np.zeros((batch_size, max_pred_length))
+                for i in range(batch_size):
+                    row = my_masked_lm_labels[i]
+                    idx = (row + 1).nonzero()[0]
+                    np_masked_id[i][:len(idx)] = row[idx]
+                    np_masked_position[i][:len(idx)] = idx
+                    np_masked_weight[i][:len(idx)] = 1
+                nd_masked_position = mx.nd.array(np_masked_position)
+                nd_masked_id = mx.nd.array(np_masked_id)
+                nd_masked_weight = mx.nd.array(np_masked_weight)
+                data_batch = [nd_input_ids, nd_masked_id, nd_masked_position, nd_masked_weight, \
+                            nd_next_sentence_label, nd_segment_ids, nd_valid_length]
+
             if step_num >= num_train_steps:
                 break
             if batch_num % accumulate == 0:
@@ -450,9 +497,11 @@ def train(data_train, data_eval, model):
                                          name="local_num_masks", priority=0)
                 else:
                     raise ValueError
-                running_mlm_loss += local_mlm_loss / local_num_masks
+                #running_mlm_loss += local_mlm_loss / local_num_masks
+                running_mlm_loss += local_mlm_loss / num_workers / args.accumulate
                 # because byteps and horovod implicitly set scale /= num_workers
-                fp16_trainer.step(local_num_masks / num_workers, max_norm=local_num_masks,
+                #fp16_trainer.step(local_num_masks / num_workers, max_norm=local_num_masks,
+                fp16_trainer.step(1.0, max_norm=num_workers,
                                   num_ctxs=len(ctxs) * num_workers)
                 if int(os.environ.get('MANUAL_ACC', False)):
                     grad_fn(model, acc_grad_dict, ctxs, req='zero')
@@ -586,3 +635,4 @@ if __name__ == '__main__':
                              name="eval_mlm_loss", priority=0)
     eval_mlm_loss.wait_to_read()
     logging.info("Done. Eval loss = {}".format(eval_mlm_loss.asscalar()))
+    import time

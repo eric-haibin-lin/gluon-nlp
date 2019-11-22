@@ -34,8 +34,16 @@ mpirun -np $NP --hostfile $HOST -display-allocation --allow-run-as-root \
             -x PT_DECAY=$PT_DECAY \
             -x SKIP_STATE_LOADING=$SKIP_STATE_LOADING \
             -x REPEAT_SAMPLER=$REPEAT_SAMPLER \
+            -x CIRCLE_LEN=8 \
             -x SCALE_NORM=$SCALE_NORM \
             -x NO_SHARD=$NO_SHARD \
+            -x FP32_LN=0 \
+            -x FP32_SM=0 \
+            -x MXNET_USE_FUSION=0 \
+            -x REPEAT_NPZ=0 \
+            -x FIX_BERT_ENCODER=1 \
+            -x HD5=1 \
+            -x CLIP_TRUST=1 \
 	    --tag-output ompi_bind_DGX1.sh python3 run_pretraining.py \
 	    --data="$DATA" \
 	    --data_eval="$DATAEVAL" \
