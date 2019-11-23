@@ -58,6 +58,7 @@ export RESCALE_FAC="0"
 export MANUAL_ACC=0
 export HD5=0
 export USE_SA=1
+export SM_LENGTH=1
 
 mkdir -p $CKPTDIR
 echo "==========================================================" >> $CKPTDIR/cmd.sh

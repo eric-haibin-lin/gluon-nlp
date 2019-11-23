@@ -41,6 +41,7 @@ mpirun -np $NP --hostfile $HOST -display-allocation --allow-run-as-root \
             -x REPEAT_SAMPLER=$REPEAT_SAMPLER \
             -x SCALE_NORM=$SCALE_NORM \
             -x MXNET_USE_FUSION=0 \
+            -x SM_LENGTH=$SM_LENGTH \
             -x USE_SA=$USE_SA \
             -x MANUAL_ACC=$MANUAL_ACC \
             -x USE_AMP=$USE_AMP \
