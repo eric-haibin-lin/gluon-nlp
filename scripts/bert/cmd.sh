@@ -4,7 +4,7 @@
 # 3) BERT fine-tune on SQuAD. This requires the checkpoint from (2).
 export DATA_HOME=~/mxnet-data/bert-pretraining/datasets
 
-export DEBUG="${DEBUG:-0}"
+export SYNTHETIC="${SYNTHETIC:-0}"
 export HOST="${HOST:-hosts_64}"
 export NP="${NP:-512}"
 export CKPTDIR="${CKPTDIR:-/fsx/test-ckpt}"
@@ -73,13 +73,11 @@ fi
 sleep 5
 
 export OPTIONS='--verbose'
-if [ "$DEBUG" = "1" ]; then
+export NUMSTEPS=7038
+export LOGINTERVAL=10
+
+if [ "$SYNTHETIC" = "1" ]; then
     export OPTIONS="$OPTIONS --synthetic_data"
-    export NUMSTEPS=5000000000
-    export LOGINTERVAL=5
-else
-    export NUMSTEPS=7038
-    export LOGINTERVAL=10
 fi
 if [ "$RAW" = "1" ]; then
     export OPTIONS="$OPTIONS --raw"
@@ -106,6 +104,14 @@ elif [ "$NP" = "512" ]; then
     #export NUMSTEPS=7038
     #LOGINTERVAL=10 BS=65536 ACC=2 MAX_SEQ_LENGTH=128 MAX_PREDICTIONS_PER_SEQ=20 LR=0.003 WARMUP_RATIO=0.45 bash mul-hvd.sh
     echo 'DONE phase1'
+elif [ "$NP" = "1" ]; then
+    export DTYPE='float32'
+    #LOGINTERVAL=10 BS=256 ACC=1 MAX_SEQ_LENGTH=128 MAX_PREDICTIONS_PER_SEQ=20 LR=0.005 WARMUP_RATIO=0.2 bash mul-hvd.sh
+    LOGINTERVAL=10 BS=8 ACC=1 MAX_SEQ_LENGTH=128 MAX_PREDICTIONS_PER_SEQ=20 LR=0.005 WARMUP_RATIO=0.2 bash mul-hvd.sh
+elif [ "$NP" = "8" ]; then
+    export DTYPE='float32'
+    #LOGINTERVAL=10 BS=256 ACC=1 MAX_SEQ_LENGTH=128 MAX_PREDICTIONS_PER_SEQ=20 LR=0.005 WARMUP_RATIO=0.2 bash mul-hvd.sh
+    LOGINTERVAL=10 BS=64 ACC=1 MAX_SEQ_LENGTH=128 MAX_PREDICTIONS_PER_SEQ=20 LR=0.005 WARMUP_RATIO=0.2 bash mul-hvd.sh
 fi
 #################################################################
 
@@ -124,26 +130,26 @@ else
 fi
 
 sleep 5
-if [ "$DEBUG" = "1" ]; then
-    export LOGINTERVAL=1
-    export OPTIONS="--synthetic_data --verbose --phase2 --phase1_num_steps=$NUMSTEPS --start_step=$NUMSTEPS"
-    export NUMSTEPS=30000
-else
-    export LOGINTERVAL=10
-    export OPTIONS="--phase2 --phase1_num_steps=$NUMSTEPS --start_step=$NUMSTEPS"
-    export NUMSTEPS=1564
+
+export LOGINTERVAL=10
+export OPTIONS="--phase2 --phase1_num_steps=$NUMSTEPS --start_step=$NUMSTEPS"
+export NUMSTEPS=1564
+
+if [ "$SYNTHETIC" = "1" ]; then
+    export OPTIONS="$OPTIONS --synthetic_data"
 fi
 
 export DATA=$DATAPHASE2
 export DATAEVAL=$DATAPHASE2EVAL
 if [ "$NP" = "512" ]; then
-    echo "$DATA"
-    echo "$DATAEVAL"
     DTYPE='float32'
     BS=32768 ACC=16 MAX_SEQ_LENGTH=512 MAX_PREDICTIONS_PER_SEQ=80 LR=0.004 WARMUP_RATIO=0.128 bash mul-hvd.sh
     #DTYPE='float16'
     #BS=32768 ACC=8 MAX_SEQ_LENGTH=512 MAX_PREDICTIONS_PER_SEQ=80 LR=0.004 WARMUP_RATIO=0.4 bash mul-hvd.sh
     echo 'DONE phase2'
+elif [ "$NP" = "8" ]; then
+    DTYPE='float32'
+    BS=32 ACC=1 MAX_SEQ_LENGTH=512 MAX_PREDICTIONS_PER_SEQ=80 LR=0.004 WARMUP_RATIO=0.128 bash mul-hvd.sh
 fi
 
 #################################################################
@@ -151,7 +157,6 @@ fi
 
 #################################################################
 # 3) BERT fine-tune on SQuAD. This requires the checkpoint from (2).
-exit
-STEP_FORMATTED=$(printf "%07d" $NUMSTEPS)
-python3 finetune_squad.py --bert_model bert_24_1024_16 --pretrained_bert_parameters $CKPTDIR/$STEP_FORMATTED.params --output_dir $CKPTDIR --optimizer adam --accumulate 3 --batch_size 8 --lr 3e-5 --epochs 2 --gpu 0,1,2,3,4,5,6,7
+#STEP_FORMATTED=$(printf "%07d" $NUMSTEPS)
+#python3 finetune_squad.py --bert_model bert_24_1024_16 --pretrained_bert_parameters $CKPTDIR/$STEP_FORMATTED.params --output_dir $CKPTDIR --optimizer adam --accumulate 3 --batch_size 8 --lr 3e-5 --epochs 2 --gpu 0,1,2,3,4,5,6,7
 #################################################################
