@@ -149,8 +149,35 @@ def _fp32_masked_softmax(F, att_score, mask, dtype):
     att_weights = F.softmax(att_score, axis=-1) * mask
     return att_weights.astype('float16')
 
+def _masked_softmax_with_len(F, att_score, length, dtype):
+    """Ignore the masked elements when calculating the softmax
+
+    Parameters
+    ----------
+    F : symbol or ndarray
+    att_score : Symborl or NDArray
+        Shape (batch_size, query_length, memory_length)
+    mask : Symbol or NDArray or None
+        Shape (batch_size, query_length, memory_length)
+    Returns
+    -------
+    att_weights : Symborl or NDArray
+        Shape (batch_size, query_length, memory_length)
+    """
+    # Fill in the masked scores with a very small value
+    logging.info("Using SoftMax with Length")
+    assert length is not None
+    att_weights = F.softmax(att_score, length=length, use_length=True, axis=-1)
+    return att_weights
+
 if int(os.environ.get('FP32_SM', False)):
     nlp.model.attention_cell._masked_softmax = _fp32_masked_softmax
+
+
+if int(os.environ.get('SM_LENGTH', False)):
+    assert not int(os.environ.get('FP32_SM', False))
+    assert not int(os.environ.get('SMALL_NEG', False))
+    nlp.model.attention_cell._masked_softmax = _masked_softmax_with_len
 
 class ShuffleSplitSampler(Sampler):
     """Split the dataset into `num_parts` parts and randomly sample from the part
@@ -266,11 +293,17 @@ def _transformer_hybrid_forward(self, F, inputs, states=None, valid_length=None,
 
     steps = self._arange_like(F, inputs, axis=0)
     if valid_length is not None:
-        ones = F.ones_like(steps)
-        mask = F.broadcast_lesser(F.reshape(steps, shape=(1, -1)),
-                                  F.reshape(valid_length, shape=(-1, 1)))
-        mask = F.broadcast_mul(F.expand_dims(mask, axis=1),
-                               F.broadcast_mul(ones, F.reshape(ones, shape=(-1, 1))))
+        if int(os.environ.get('SM_LENGTH', False)):
+            zeros = F.zeros_like(steps)
+            mask = F.broadcast_add(F.reshape(valid_length, shape=(-1, 1)),
+                                   F.reshape(zeros, shape=(1, -1)))
+            mask = F.cast(mask, dtype='int32')
+        else:
+            ones = F.ones_like(steps)
+            mask = F.broadcast_lesser(F.reshape(steps, shape=(1, -1)),
+                                      F.reshape(valid_length, shape=(-1, 1)))
+            mask = F.broadcast_mul(F.expand_dims(mask, axis=1),
+                                   F.broadcast_mul(ones, F.reshape(ones, shape=(-1, 1))))
         if states is None:
             states = [mask]
         else:

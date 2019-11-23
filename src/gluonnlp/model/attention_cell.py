@@ -203,9 +203,13 @@ class MultiHeadSelfAttentionCell(AttentionCell):
         in_weight = F.concat(query_weight, key_weight, value_weight, dim=0)
         qkv_proj = F.FullyConnected(data=query, weight=in_weight, bias=in_bias, num_hidden=self.units*3, no_bias=False, flatten=False)
         if mask is not None:
+            target_shape = (-1, 0, 0)
+            import os
+            if int(os.environ.get('SM_LENGTH', False)):
+                target_shape = (-1, 0)
             mask = F.broadcast_axis(F.expand_dims(mask, axis=1),
                                     axis=1, size=self._num_heads)\
-                    .reshape(shape=(-1, 0, 0), reverse=True)
+                    .reshape(shape=target_shape, reverse=True)
         att_score = F.contrib.interleaved_matmul_selfatt_qk(qkv_proj, heads=self._num_heads)
         att_weights = self.dropout_layer(_masked_softmax(F, att_score, mask, self._dtype))
         context_vec = F.contrib.interleaved_matmul_selfatt_valatt(qkv_proj, att_weights,
@@ -308,9 +312,13 @@ class MultiHeadAttentionCell(AttentionCell):
         query = self._project(F, 'query', query)
         key = self._project(F, 'key', key)
         if mask is not None:
+            target_shape = (-1, 0, 0)
+            import os
+            if int(os.environ.get('SM_LENGTH', False)):
+                target_shape = (-1, 0)
             mask = F.broadcast_axis(F.expand_dims(mask, axis=1),
                                     axis=1, size=self._num_heads)\
-                    .reshape(shape=(-1, 0, 0), reverse=True)
+                    .reshape(shape=target_shape, reverse=True)
         att_weights = self._base_cell._compute_weight(F, query, key, mask)
         return att_weights.reshape(shape=(-1, self._num_heads, 0, 0), reverse=True)
 
