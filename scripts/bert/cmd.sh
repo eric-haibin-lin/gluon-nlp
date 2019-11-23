@@ -56,9 +56,9 @@ export WINDOW_SIZE=2000
 export USE_AMP=0
 export RESCALE_FAC="0"
 export MANUAL_ACC=0
-export HD5=0
 export USE_SA=1
 export SM_LENGTH=1
+export HD5=0
 
 mkdir -p $CKPTDIR
 echo "==========================================================" >> $CKPTDIR/cmd.sh
@@ -80,7 +80,10 @@ export LOGINTERVAL=10
 
 if [ "$SYNTHETIC" = "1" ]; then
     export OPTIONS="$OPTIONS --synthetic_data"
+else
+    export HD5=1
 fi
+
 if [ "$RAW" = "1" ]; then
     export OPTIONS="$OPTIONS --raw"
 fi
@@ -139,6 +142,8 @@ export NUMSTEPS=1564
 
 if [ "$SYNTHETIC" = "1" ]; then
     export OPTIONS="$OPTIONS --synthetic_data"
+else
+    export HD5=1
 fi
 
 export DATA=$DATAPHASE2
