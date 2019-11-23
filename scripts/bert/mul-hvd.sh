@@ -1,7 +1,8 @@
 
-#            python -c 'import os; import socket; import mxnet as mx; import horovod.mxnet as hvd; hvd.init(); print(socket.gethostname(), hvd.rank()); x = mx.nd.ones((1)).copyto(mx.gpu(hvd.local_rank())); hvd.allreduce_(x); print(x.asscalar()); import time; time.sleep(5)'
 #exit
 pkill python
+#            python -c 'import os; import socket; import mxnet as mx; import horovod.mxnet as hvd; hvd.init(); print(socket.gethostname(), hvd.rank()); x = mx.nd.ones((1)).copyto(mx.gpu(hvd.local_rank())); hvd.allreduce_(x); print(x.asscalar()); import time; time.sleep(5)'
+#exit
 
 	    #-x HOROVOD_TIMELINE=timeline.efa \
 
@@ -45,7 +46,8 @@ mpirun -np $NP --hostfile $HOST -display-allocation --allow-run-as-root \
             -x FIX_BERT_ENCODER=1 \
             -x HD5=$HD5 \
             -x NO_SHARD=$NO_SHARD \
-	    --tag-output ompi_bind_DGX1.sh python3 run_pretraining.py \
+	    --tag-output ompi_bind_DGX1.sh \
+            python3 run_pretraining.py \
 	    --data="$DATA" \
 	    --data_eval="$DATAEVAL" \
 	    --optimizer $OPTIMIZER \

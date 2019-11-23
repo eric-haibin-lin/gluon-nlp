@@ -99,8 +99,12 @@ if [ "$NP" = "256" ]; then
     echo 'DONE phase1'
 elif [ "$NP" = "512" ]; then
     #BS=65536 ACC=8 MAX_SEQ_LENGTH=128 MAX_PREDICTIONS_PER_SEQ=20 LR=0.006 WARMUP_RATIO=0.2843 bash mul-hvd.sh
-    export NUMSTEPS=7038
-    LOGINTERVAL=10 BS=65536 ACC=2 MAX_SEQ_LENGTH=128 MAX_PREDICTIONS_PER_SEQ=20 LR=0.004 WARMUP_RATIO=0.444 bash mul-hvd.sh
+
+    export NUMSTEPS=14063
+    export DTYPE='float32'
+    LOGINTERVAL=10 BS=32768 ACC=2 MAX_SEQ_LENGTH=128 MAX_PREDICTIONS_PER_SEQ=20 LR=0.004 WARMUP_RATIO=0.2 bash mul-hvd.sh
+    #export NUMSTEPS=7038
+    #LOGINTERVAL=10 BS=65536 ACC=2 MAX_SEQ_LENGTH=128 MAX_PREDICTIONS_PER_SEQ=20 LR=0.003 WARMUP_RATIO=0.45 bash mul-hvd.sh
     echo 'DONE phase1'
 fi
 #################################################################
@@ -135,7 +139,10 @@ export DATAEVAL=$DATAPHASE2EVAL
 if [ "$NP" = "512" ]; then
     echo "$DATA"
     echo "$DATAEVAL"
-    BS=32768 ACC=8 MAX_SEQ_LENGTH=512 MAX_PREDICTIONS_PER_SEQ=80 LR=0.004 WARMUP_RATIO=0.4 bash mul-hvd.sh
+    DTYPE='float32'
+    BS=32768 ACC=16 MAX_SEQ_LENGTH=512 MAX_PREDICTIONS_PER_SEQ=80 LR=0.004 WARMUP_RATIO=0.4 bash mul-hvd.sh
+    #DTYPE='float16'
+    #BS=32768 ACC=8 MAX_SEQ_LENGTH=512 MAX_PREDICTIONS_PER_SEQ=80 LR=0.004 WARMUP_RATIO=0.4 bash mul-hvd.sh
     echo 'DONE phase2'
 fi
 
