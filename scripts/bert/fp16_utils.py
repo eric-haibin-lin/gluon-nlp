@@ -387,7 +387,7 @@ class LAMB2(Optimizer):
                     weight[:] = _projection(weight, var_hat, alpha=alpha)
                     # logging.info("after project: name = {}, norm = {}".format(name, weight.norm().asscalar()))
 
-def grad_global_norm(parameters, max_norm):
+def grad_global_norm2(parameters, max_norm):
     """Calculate the 2-norm of gradients of parameters, and how much they should be scaled down
     such that their 2-norm does not exceed `max_norm`.
 
@@ -426,6 +426,39 @@ def grad_global_norm(parameters, max_norm):
     NDArray
       Whether the total norm is finite. Shape is (1,)
     """
+    # distribute gradients among each ctx, every ctx has a reduced copy of grads
+    idx = 0
+    from collections import defaultdict
+    arrays = defaultdict(list)
+    sum_norms = []
+
+    for p in parameters:
+        if p.grad_req != 'null':
+            p_grads = p.list_grad()
+            arrays[idx % len(p_grads)].append(p_grads[idx % len(p_grads)])
+            idx += 1
+    assert len(arrays) > 0, 'No parameter found available for gradient norm.'
+    ctx, dtype = arrays[0][0].context, 'float32'
+    for idx,arr in enumerate(arrays.values()):
+        partial_sum_norm=mx.nd.multi_sum_sq(*arr,num_arrays=len(arr))
+        sum_norms.append(mx.nd.sum(partial_sum_norm).as_in_context(ctx))
+
+    # reduce
+    total_norm = nd.add_n(*sum_norms).sqrt()
+    scale = total_norm / max_norm
+    # is_finite = 0 if NaN or Inf, 1 otherwise.
+    is_finite = nd.contrib.isfinite(scale)
+    # if scale is finite, nd.maximum selects the max between scale and 1. That is,
+    # 1 is returned if total_norm does not exceed max_norm.
+    # if scale = NaN or Inf, the result of nd.minimum is undefined. Therefore, we use
+    # choices.take to return NaN or Inf.
+    scale_or_one = nd.maximum(nd.ones((1,), dtype=dtype, ctx=ctx), scale)
+    choices = nd.concat(scale, scale_or_one, dim=0)
+    chosen_scale = choices.take(is_finite)
+    return total_norm, chosen_scale, is_finite
+
+
+def grad_global_norm(parameters, max_norm):
     # collect gradient arrays
     arrays = []
     idx = 0
@@ -549,8 +582,14 @@ class FP16Trainer:
 
         if max_norm is not None:
             max_norm = max_norm * loss_scale
-            total_norm, ratio, is_finite = grad_global_norm(self.fp32_trainer._params,
-                                                            max_norm)
+
+
+            norm_fn = grad_global_norm2
+            if os.environ.get('SLOW_NORM', False):
+                norm_fn = grad_global_norm
+
+            total_norm, ratio, is_finite = norm_fn(self.fp32_trainer._params,
+                                                   max_norm)
             logging.info('ratio = {}, total_norm = {}'.format(ratio.asscalar(), total_norm.asscalar() / num_ctxs / loss_scale))
             if int(os.environ.get('SKIP_GLOBAL_CLIP', False)):
                 pass
