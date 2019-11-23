@@ -8,7 +8,7 @@ export DEBUG="${DEBUG:-0}"
 export HOST="${HOST:-hosts_64}"
 export NP="${NP:-512}"
 export CKPTDIR="${CKPTDIR:-/fsx/test-ckpt}"
-export OPTIMIZER="${OPTIMIZER:-lamb2}"
+export OPTIMIZER="${OPTIMIZER:-lamb3}"
 export COMPLETE_TRAIN="${COMPLETE_TRAIN:-1}"
 
 #export DATA="${DATA:-$DATA_HOME/book-corpus/book-corpus-large-split/*.train,$DATA_HOME/enwiki/enwiki-feb-doc-split/*.train}"

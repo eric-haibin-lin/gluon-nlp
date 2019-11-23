@@ -29,7 +29,9 @@ from mxnet.ndarray import square, power, sqrt, maximum, minimum, clip, where
 
 import math
 
-from mxnet.ndarray import square, power, sqrt, maximum, minimum, clip, where, norm, full
+from mxnet.ndarray import square, power, sqrt, maximum, minimum, clip, where, norm, full, lamb_update_phase1, lamb_update_phase2
+from mxnet.ndarray import mp_lamb_update_phase1, mp_lamb_update_phase2
+import numpy
 
 
 def _projection(weight, var, alpha=0.1, iters=10, eps=1e-6):
@@ -71,6 +73,88 @@ def _projection(weight, var, alpha=0.1, iters=10, eps=1e-6):
         z[:] = v + tau * (weight - v)
     z[:] *= sqrt(var)
     return z
+
+@register
+class LAMB3(Optimizer):
+    """LAMB Optimizer.
+    """
+    def __init__(self, learning_rate=0.001, beta1=0.9, beta2=0.999, epsilon=1e-6,
+                 lower_bound=None, upper_bound=None, bias_correction=True, **kwargs):
+        super(LAMB3, self).__init__(learning_rate=learning_rate, **kwargs)
+        self.beta1 = beta1
+        self.beta2 = beta2
+        self.epsilon = epsilon
+        self.lower_bound = lower_bound
+        self.upper_bound = upper_bound
+        self.bias_correction = bias_correction
+
+    def create_state(self, index, weight):
+        stype = weight.stype
+        return (zeros(weight.shape, weight.context, dtype=numpy.float32, stype=stype),
+                zeros(weight.shape, weight.context, dtype=numpy.float32, stype=stype))
+
+    def _update_impl(self, indices, weights, grads, states, multi_precision=False):
+        aggregate = True
+        if not isinstance(indices, (tuple, list)):
+            indices = [indices]
+            weights = [weights]
+            grads = [grads]
+            states = [states]
+        for weight, grad in zip(weights, grads):
+            assert(isinstance(weight, NDArray))
+            assert(isinstance(grad, NDArray))
+            aggregate = (aggregate and
+                         weight.stype == 'default' and
+                         grad.stype == 'default')
+        self._update_count(indices)
+        lrs = self._get_lrs(indices)
+        wds = self._get_wds(indices)
+        for idx in indices:
+            t = self._index_update_count[idx]
+
+            kwargs = {'beta1': self.beta1, 'beta2': self.beta2, 'epsilon': self.epsilon,
+                      'bias_correction': self.bias_correction, 't': t,
+                      'rescale_grad': self.rescale_grad}
+
+            if self.clip_gradient:
+                kwargs['clip_gradient'] = self.clip_gradient
+
+            if multi_precision:
+                for weight, grad, state, lr, wd in zip(weights, grads, states, lrs, wds):
+                    mean, var = state[1]
+                    weight32 = state[0]
+                    g = mp_lamb_update_phase1(weight, grad, mean, var, weight32, wd=wd, **kwargs)
+
+                    kwargs = {}
+                    if self.lower_bound:
+                        kwargs['lower_bound'] = self.lower_bound
+                    if self.upper_bound:
+                        kwargs['upper_bound'] = self.upper_bound
+                    r_1 = weight32.norm()
+                    r_2 = g.norm()
+                    mp_lamb_update_phase2(weight, g, r_1, r_2, weight32, lr=lr, out=weight, **kwargs)
+            else:
+                for weight, grad, state, lr, wd in zip(weights, grads, states, lrs, wds):
+                    mean, var = state
+                    g = lamb_update_phase1(weight, grad, mean, var, wd=wd, **kwargs)
+
+                    kwargs = {}
+                    if self.lower_bound:
+                        kwargs['lower_bound'] = self.lower_bound
+                    if self.upper_bound:
+                        kwargs['upper_bound'] = self.upper_bound
+                    r_1 = weight.norm()
+                    r_2 = g.norm()
+                    lamb_update_phase2(weight, g, r_1, r_2, lr=lr, out=weight, **kwargs)
+
+    def update_multi_precision(self, index, weight, grad, state):
+        if not isinstance(index, (tuple, list)):
+            use_multi_precision = self.multi_precision and weight.dtype == numpy.float16
+        else:
+            use_multi_precision = self.multi_precision and weight[0].dtype == numpy.float16
+        self._update_impl(index, weight, grad, state,
+                          multi_precision=use_multi_precision)
+
 
 @register
 class LAMB2(Optimizer):
