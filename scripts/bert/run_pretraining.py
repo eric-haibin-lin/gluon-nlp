@@ -509,16 +509,17 @@ def train(data_train, data_eval, model):
             if (batch_num + 1) % accumulate == 0:
                 if int(os.environ.get('MANUAL_ACC', False)):
                     grad_fn(model, acc_grad_dict, ctxs, req='assign')
-                if backend == 'horovod':
-                    hvd.allreduce_(local_mlm_loss, average=False, name='local_mlm_loss')
-                    hvd.allreduce_(local_num_masks, average=False, name='local_num_masks')
-                elif backend == 'byteps':
-                    bps.byteps_push_pull(local_mlm_loss, is_average=False,
-                                         name="local_mlm_loss", priority=0)
-                    bps.byteps_push_pull(local_num_masks, is_average=False,
-                                         name="local_num_masks", priority=0)
-                else:
-                    raise ValueError
+                if not int(os.environ.get('SKIP_COMM', False)):
+                    if backend == 'horovod':
+                        hvd.allreduce_(local_mlm_loss, average=False, name='local_mlm_loss')
+                        hvd.allreduce_(local_num_masks, average=False, name='local_num_masks')
+                    elif backend == 'byteps':
+                        bps.byteps_push_pull(local_mlm_loss, is_average=False,
+                                             name="local_mlm_loss", priority=0)
+                        bps.byteps_push_pull(local_num_masks, is_average=False,
+                                             name="local_num_masks", priority=0)
+                    else:
+                        raise ValueError
                 running_mlm_loss += local_mlm_loss / num_workers / args.accumulate
                 # because byteps and horovod implicitly set scale /= num_workers
                 fp16_trainer.step(1.0, max_norm=num_workers,

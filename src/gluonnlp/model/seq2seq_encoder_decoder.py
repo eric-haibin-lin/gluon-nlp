@@ -85,7 +85,13 @@ def _get_attention_cell(attention_cell, units=None,
             return MLPAttentionCell(units=units, normalized=True)
         elif attention_cell == 'multi_head':
             base_cell = DotProductAttentionCell(scaled=scaled, dropout=dropout)
-            return MultiHeadAttentionCell(base_cell=base_cell, query_units=units, use_bias=use_bias,
+            import os
+            if int(os.environ.get('USE_SA', False)):
+                from .attention_cell import MultiHeadSelfAttentionCell
+                return MultiHeadSelfAttentionCell(base_cell=base_cell, query_units=units, use_bias=use_bias,
+                                          key_units=units, value_units=units, num_heads=num_heads)
+            else:
+                return MultiHeadAttentionCell(base_cell=base_cell, query_units=units, use_bias=use_bias,
                                           key_units=units, value_units=units, num_heads=num_heads)
         else:
             raise NotImplementedError

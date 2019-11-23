@@ -224,6 +224,112 @@ if int(os.environ.get('FIX_BERT_ENCODER', False)):
     nlp.model.bert.BERTEncoder = BERTEncoder2
     nlp.model.bert.bert_24_1024_16_hparams['embed_dropout'] = 0.0
 
+def _encode_sequence(self, inputs, token_types, valid_length=None):
+    """Generate the representation given the input sequences.
+    This is used for pre-training or fine-tuning a BERT model.
+    """
+    # embedding
+    embedding = self.word_embed(inputs)
+    if self._use_token_type_embed:
+        type_embedding = self.token_type_embed(token_types)
+        embedding = embedding + type_embedding
+    embedding = embedding.transpose((1, 0, 2))
+    # encoding
+    outputs, additional_outputs = self.encoder(embedding, valid_length=valid_length)
+    outputs = outputs.transpose((1, 0, 2))
+    return outputs, additional_outputs
+
+def _arange_like(self, F, inputs, axis):
+    """Helper function to generate indices of a range"""
+    if F == mx.ndarray:
+        seq_len = inputs.shape[axis]
+        arange = F.arange(seq_len, dtype=inputs.dtype, ctx=inputs.context)
+    else:
+        end = [1,1,1]
+        end[axis] = None
+        input_axis = inputs.slice(begin=(0, 0, 0), end=tuple(end)).reshape((-1))
+        zeros = F.zeros_like(input_axis)
+        arange = F.arange(start=0, repeat=1, step=1,
+                          infer_range=True, dtype=self._dtype)
+        arange = F.elemwise_add(arange, zeros)
+    return arange
+
+def _transformer_hybrid_forward(self, F, inputs, states=None, valid_length=None, position_weight=None):
+    # pylint: disable=arguments-differ
+    """Encode the inputs given the states and valid sequence length.
+    """
+    # XXX Temporary hack for hybridization as hybridblock does not support None inputs
+    if isinstance(valid_length, list) and len(valid_length) == 0:
+        valid_length = None
+    if isinstance(states, list) and len(states) == 0:
+        states = None
+
+    steps = self._arange_like(F, inputs, axis=0)
+    if valid_length is not None:
+        ones = F.ones_like(steps)
+        mask = F.broadcast_lesser(F.reshape(steps, shape=(1, -1)),
+                                  F.reshape(valid_length, shape=(-1, 1)))
+        mask = F.broadcast_mul(F.expand_dims(mask, axis=1),
+                               F.broadcast_mul(ones, F.reshape(ones, shape=(-1, 1))))
+        if states is None:
+            states = [mask]
+        else:
+            states.append(mask)
+    if self._scale_embed:
+        # XXX: input.shape[-1] and self._units are expected to be the same
+        inputs = inputs * math.sqrt(self._units)
+    if states is None:
+        states = [steps]
+    else:
+        states.append(steps)
+    if states is not None:
+        steps = states[-1]
+        # positional encoding
+        positional_embed = F.Embedding(steps, position_weight, self._max_length, self._units)
+        inputs = F.broadcast_add(inputs, F.expand_dims(positional_embed, axis=1))
+    if self._dropout:
+        if self._use_layer_norm_before_dropout:
+            inputs = self.layer_norm(inputs)
+            inputs = self.dropout_layer(inputs)
+        else:
+            inputs = self.dropout_layer(inputs)
+            inputs = self.layer_norm(inputs)
+    else:
+        inputs = self.layer_norm(inputs)
+    outputs = inputs
+    if valid_length is not None:
+        mask = states[-2]
+    else:
+        mask = None
+    all_encodings_outputs = []
+    additional_outputs = []
+    for cell in self.transformer_cells:
+        outputs, attention_weights = cell(inputs, mask)
+        inputs = outputs
+        if self._output_all_encodings:
+            if valid_length is not None:
+                outputs = F.SequenceMask(outputs, sequence_length=valid_length,
+                                         use_sequence_length=True, axis=0)
+            all_encodings_outputs.append(outputs)
+
+        if self._output_attention:
+            additional_outputs.append(attention_weights)
+
+    if valid_length is not None:
+        outputs = F.SequenceMask(outputs, sequence_length=valid_length,
+                                 use_sequence_length=True, axis=0)
+
+    if self._output_all_encodings:
+        return all_encodings_outputs, additional_outputs
+    else:
+        return outputs, additional_outputs
+
+
+if int(os.environ.get('USE_SA', False)):
+    print('USING self attention')
+    nlp.model.bert.BERTModel._encode_sequence = _encode_sequence
+    nlp.model.transformer.BaseTransformerEncoder._arange_like = _arange_like
+    nlp.model.transformer.BaseTransformerEncoder.hybrid_forward = _transformer_hybrid_forward
 
 class RepeatSplitSampler(nlp.data.SplitSampler):
     def __init__(self, length, num_parts=1, part_index=0, repeat=40):

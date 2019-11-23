@@ -56,7 +56,8 @@ export WINDOW_SIZE=2000
 export USE_AMP=0
 export RESCALE_FAC="0"
 export MANUAL_ACC=0
-export HD5=1
+export HD5=0
+export USE_SA=1
 
 mkdir -p $CKPTDIR
 echo "==========================================================" >> $CKPTDIR/cmd.sh

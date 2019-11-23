@@ -16,7 +16,7 @@
 # under the License.
 """Attention cells."""
 
-__all__ = ['AttentionCell', 'MultiHeadAttentionCell', 'MLPAttentionCell', 'DotProductAttentionCell']
+__all__ = ['AttentionCell', 'MultiHeadAttentionCell', 'MLPAttentionCell', 'DotProductAttentionCell', 'MultiHeadSelfAttentionCell']
 
 import math
 import numpy as np
@@ -162,6 +162,54 @@ class AttentionCell(HybridBlock):
     def hybrid_forward(self, F, query, key, value, mask=None):  # pylint: disable=arguments-differ
         att_weights = self._compute_weight(F, query, key, mask)
         context_vec = self._read_by_weight(F, att_weights, value)
+        return context_vec, att_weights
+
+class MultiHeadSelfAttentionCell(AttentionCell):
+    r"""Multi-head Attention Cell.
+    """
+    def __init__(self, base_cell, query_units, key_units, value_units, num_heads, use_bias=True,
+                 weight_initializer=None, bias_initializer='zeros', prefix=None, params=None):
+        super().__init__(prefix=prefix, params=params)
+        self._base_cell = base_cell
+        self._num_heads = num_heads
+        self._use_bias = use_bias
+        self.units = query_units
+        assert query_units == key_units
+        assert query_units == value_units
+        with self.name_scope():
+            if self._use_bias:
+                self.query_bias = self.params.get('query_bias', shape=(self.units,),
+                                                 init=bias_initializer)
+                self.key_bias   = self.params.get('key_bias', shape=(self.units,),
+                                                 init=bias_initializer)
+                self.value_bias = self.params.get('value_bias', shape=(self.units,),
+                                                 init=bias_initializer)
+            else:
+                assert False
+            self.query_weight = self.params.get('query_weight', shape=(self.units, self.units),
+                                             init=weight_initializer,
+                                             allow_deferred_init=True)
+            self.key_weight   = self.params.get('key_weight', shape=(self.units, self.units),
+                                             init=weight_initializer,
+                                             allow_deferred_init=True)
+            self.value_weight = self.params.get('value_weight', shape=(self.units, self.units),
+                                             init=weight_initializer,
+                                             allow_deferred_init=True)
+            self.dropout_layer = nn.Dropout(base_cell._dropout)
+
+    def hybrid_forward(self, F, query, key, value, mask, query_bias, key_bias, value_bias,
+                       query_weight, key_weight, value_weight):
+        in_bias = F.concat(query_bias, key_bias, value_bias, dim=0)
+        in_weight = F.concat(query_weight, key_weight, value_weight, dim=0)
+        qkv_proj = F.FullyConnected(data=query, weight=in_weight, bias=in_bias, num_hidden=self.units*3, no_bias=False, flatten=False)
+        if mask is not None:
+            mask = F.broadcast_axis(F.expand_dims(mask, axis=1),
+                                    axis=1, size=self._num_heads)\
+                    .reshape(shape=(-1, 0, 0), reverse=True)
+        att_score = F.contrib.interleaved_matmul_selfatt_qk(qkv_proj, heads=self._num_heads)
+        att_weights = self.dropout_layer(_masked_softmax(F, att_score, mask, self._dtype))
+        context_vec = F.contrib.interleaved_matmul_selfatt_valatt(qkv_proj, att_weights,
+                                                          heads=self._num_heads)
         return context_vec, att_weights
 
 
