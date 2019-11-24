@@ -500,11 +500,17 @@ class BaseTransformerEncoder(HybridBlock, Seq2SeqEncoder):
 
         steps = self._arange_like(F, inputs, axis=1)
         if valid_length is not None:
-            ones = F.ones_like(steps)
-            mask = F.broadcast_lesser(F.reshape(steps, shape=(1, -1)),
-                                      F.reshape(valid_length, shape=(-1, 1)))
-            mask = F.broadcast_mul(F.expand_dims(mask, axis=1),
-                                   F.broadcast_mul(ones, F.reshape(ones, shape=(-1, 1))))
+            if int(os.environ.get('SM_LENGTH', False)):
+                zeros = F.zeros_like(steps)
+                mask = F.broadcast_add(F.reshape(valid_length, shape=(-1, 1)),
+                                       F.reshape(zeros, shape=(1, -1)))
+                mask = F.cast(mask, dtype='int32')
+            else:
+                ones = F.ones_like(steps)
+                mask = F.broadcast_lesser(F.reshape(steps, shape=(1, -1)),
+                                          F.reshape(valid_length, shape=(-1, 1)))
+                mask = F.broadcast_mul(F.expand_dims(mask, axis=1),
+                                       F.broadcast_mul(ones, F.reshape(ones, shape=(-1, 1))))
             if states is None:
                 states = [mask]
             else:
