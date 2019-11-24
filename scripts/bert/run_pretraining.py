@@ -538,7 +538,7 @@ def train(data_train, data_eval, model):
             # logging
             if (step_num + 1) % (args.log_interval) == 0 and (batch_num + 1) % accumulate == 0:
                 if args.no_compute_acc:
-                    log_noacc(begin_time, running_num_tks, running_mlm_loss,
+                    mlm_scalar = log_noacc(begin_time, running_num_tks, running_mlm_loss,
                               0, step_num, trainer, args.log_interval)
                 else:
                     log(begin_time, running_num_tks, running_mlm_loss / accumulate,

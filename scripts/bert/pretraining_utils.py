@@ -636,11 +636,13 @@ def log_noacc(begin_time, running_num_tks, running_mlm_loss, running_nsp_loss, s
     running_mlm_loss = running_mlm_loss / log_interval
     running_nsp_loss = running_nsp_loss / log_interval
     lr = trainer.learning_rate if trainer else 0
+    mlm_scalar = running_mlm_loss.asscalar()
     # pylint: disable=line-too-long
     logging.info('[step {}]\tmlm_loss={:7.5f}\tnsp_loss={:5.2f}\tthroughput={:.1f}K tks/s\tlr={:.7f} time={:.2f}, latency={:.1f} ms/batch'
-                 .format(step_num, running_mlm_loss.asscalar(), 0,
+                 .format(step_num, mlm_scalar, 0,
                          throughput.asscalar(), lr, duration, duration*1000/log_interval))
     # pylint: enable=line-too-long
+    return mlm_scalar
 
 def log(begin_time, running_num_tks, running_mlm_loss, running_nsp_loss, step_num,
         mlm_metric, nsp_metric, trainer, log_interval):
