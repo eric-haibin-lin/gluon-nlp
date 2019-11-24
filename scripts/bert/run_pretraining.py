@@ -144,6 +144,7 @@ parser.add_argument('--gpus', type=str, default=None,
                          'communication, e.g. 0 or 0,2,5. empty means using cpu.')
 parser.add_argument('--phase2', action='store_true', help='phase 2 training')
 parser.add_argument('--phase1_num_steps', type=int, help='number of steps for phase 1')
+parser.add_argument('--seed', type=int, default=0, help='random seed')
 parser.add_argument('--local_fs', action='store_true', help='local file system for saving checkpoints')
 args = parser.parse_args()
 
@@ -249,6 +250,15 @@ logging.info("{} / {}".format(rank, num_workers))
 
 early_stop = os.environ.get('HOROVOD_TIMELINE', None)
 eval_mlm_loss = None
+
+import torch, random, numpy as np
+mx.random.seed(args.seed)
+np.random.seed(args.seed)
+random.seed(args.seed)
+mx.nd.waitall()
+torch.manual_seed(args.seed)
+logging.info('Random seed set to %d', args.seed)
+
 
 import os
 if int(os.environ.get('HD5', False)):
@@ -573,8 +583,6 @@ def train(data_train, data_eval, model):
     logging.info('Train cost={:.1f}s'.format(train_end_time - train_begin_time))
 
 if __name__ == '__main__':
-    random_seed = random.randint(0, 1000)
-
     dataset_name, vocab = args.dataset_name, None
     if args.sentencepiece:
         logging.info('loading vocab file from sentence piece model: %s', args.sentencepiece)
@@ -608,9 +616,6 @@ if __name__ == '__main__':
             if not os.path.isfile(cache_file) and local_rank == 0:
                 if is_master_node or args.local_fs:
                     generate_dev_set(tokenizer, vocab, cache_file, args)
-
-    logging.info('Random seed set to %d', random_seed)
-    mx.random.seed(random_seed)
 
     if args.data:
         if args.raw:

@@ -35,7 +35,6 @@ export CLUSHUSER=ec2-user
 export COMMIT=58435d04
 
 export NCCLMINNRINGS=1
-export TRUNCATE_NORM=1
 export LAMB_BULK=60
 export EPS_AFTER_SQRT=1
 export SKIP_STATE_LOADING=1
@@ -56,9 +55,10 @@ export WINDOW_SIZE=2000
 export USE_AMP=0
 export RESCALE_FAC="0"
 export MANUAL_ACC=0
-export USE_SA=1
-export SM_LENGTH=1
+export USE_SA=0
+export SM_LENGTH=0
 export HD5=0
+export TRUNCATE_NORM=0
 
 mkdir -p $CKPTDIR
 echo "==========================================================" >> $CKPTDIR/cmd.sh
