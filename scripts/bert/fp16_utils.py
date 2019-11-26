@@ -29,8 +29,12 @@ from mxnet.ndarray import square, power, sqrt, maximum, minimum, clip, where
 
 import math
 
-from mxnet.ndarray import square, power, sqrt, maximum, minimum, clip, where, norm, full, lamb_update_phase1, lamb_update_phase2
-from mxnet.ndarray import mp_lamb_update_phase1, mp_lamb_update_phase2
+from mxnet.ndarray import square, power, sqrt, maximum, minimum, clip, where, norm, full
+try:
+    from mxnet.ndarray import lamb_update_phase1, lamb_update_phase2
+    from mxnet.ndarray import mp_lamb_update_phase1, mp_lamb_update_phase2
+except Exception as e:
+    print(e, 'skipping the import')
 import numpy
 
 
