@@ -2,6 +2,8 @@
 # 1) BERT pre-train phase 1 (with seq-len = 128)
 # 2) BERT pre-train phase 2 (with seq-len = 512). This requires the checkpoint from (1)
 # 3) BERT fine-tune on SQuAD. This requires the checkpoint from (2).
+set -ex
+
 export DATA_HOME=~/mxnet-data/bert-pretraining/datasets
 
 export SYNTHETIC="${SYNTHETIC:-0}"
@@ -45,7 +47,7 @@ export DTYPE=float16
 export FP32_LN=0
 export FP32_SM=0
 export MODEL=bert_24_1024_16
-export CKPTINTERVAL=300000000
+export CKPTINTERVAL=5000
 export HIERARCHICAL=0
 export EVALINTERVAL=100000000
 export NO_DROPOUT=0
@@ -59,6 +61,7 @@ export USE_SA=0
 export SM_LENGTH=0
 export HD5=0
 export TRUNCATE_NORM=0
+
 
 mkdir -p $CKPTDIR
 echo "==========================================================" >> $CKPTDIR/cmd.sh

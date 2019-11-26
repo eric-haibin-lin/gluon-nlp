@@ -252,12 +252,12 @@ early_stop = os.environ.get('HOROVOD_TIMELINE', None)
 eval_mlm_loss = None
 
 import torch, random, numpy as np
-mx.random.seed(args.seed)
-np.random.seed(args.seed)
-random.seed(args.seed)
+mx.random.seed(args.seed + rank)
+np.random.seed(args.seed + rank)
+random.seed(args.seed + rank)
 mx.nd.waitall()
-torch.manual_seed(args.seed)
-logging.info('Random seed set to %d', args.seed)
+torch.manual_seed(args.seed + rank)
+logging.info('Random seed set to %d', args.seed + rank)
 
 
 import os
