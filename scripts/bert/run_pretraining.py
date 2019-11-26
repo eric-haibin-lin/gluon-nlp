@@ -252,7 +252,8 @@ logging.info("{} / {}".format(rank, num_workers))
 early_stop = os.environ.get('HOROVOD_TIMELINE', None)
 eval_mlm_loss = None
 
-import torch, random, numpy as np
+import random, numpy as np
+import os
 mx.random.seed(args.seed + rank)
 np.random.seed(args.seed + rank)
 random.seed(args.seed + rank)
@@ -260,10 +261,9 @@ mx.nd.waitall()
 torch.manual_seed(args.seed + rank)
 logging.info('Random seed set to %d', args.seed + rank)
 
-
-import os
 if int(os.environ.get('HD5', False)):
     import torch
+    torch.manual_seed(args.seed)
     from torch.utils.data import DataLoader, RandomSampler, SequentialSampler, Dataset
     import mxnet as mx
     import h5py
@@ -362,7 +362,11 @@ def train(data_train, data_eval, model):
     if backend == 'horovod':
         trainer = hvd.DistributedTrainer(param_dict, args.optimizer, optim_params)
     elif backend == 'byteps':
-        trainer = bps.DistributedTrainer(param_dict, args.optimizer, optim_params)
+        try:
+            trainer = bps.DistributedTrainer(param_dict, args.optimizer, optim_params, block=model.bert)
+        except Exception as e:
+            trainer = bps.DistributedTrainer(param_dict, args.optimizer, optim_params)
+            print(e, 'skip passing block=model')
     else:
         trainer = mx.gluon.Trainer(param_dict, args.optimizer, optim_params,
                                    update_on_kvstore=False)

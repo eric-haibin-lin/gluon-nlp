@@ -5,7 +5,7 @@ export LAMB_BULK="${LAMB_BULK:-30}"
 export EPS_AFTER_SQRT="${EPS_AFTER_SQRT:-1}"
 export NUMSTEPS="${NUMSTEPS:-900000}"
 export DTYPE="${DTYPE:-float16}"
-export BS="${BS:-512}"
+export BS="${BS:-128}"
 export ACC="${ACC:-1}"
 export MODEL="${MODEL:-bert_24_1024_16}"
 export MAX_SEQ_LENGTH="${MAX_SEQ_LENGTH:-128}"
@@ -14,14 +14,17 @@ export LR="${LR:-0.000625}"
 export LOGINTERVAL="${LOGINTERVAL:-10}"
 export CKPTDIR="${CKPTDIR:-ckpt_stage1_lamb}"
 export CKPTINTERVAL="${CKPTINTERVAL:-300000000}"
-export OPTIMIZER="${OPTIMIZER:-lamb}"
+export OPTIMIZER="${OPTIMIZER:-bertadam}"
 export WARMUP_RATIO="${WARMUP_RATIO:-0.003125}"
 export BYTEPS_PARTITION_BYTES="${BYTEPS_PARTITION_BYTES:-4096000}"
+export BYTEPS_NCCL_NUM_RINGS=1
+export BYTEPS_FORCE_DISTRIBUTED=1
 export BYTEPS_NCCL_GROUP_SIZE="${BYTEPS_NCCL_GROUP_SIZE:-16}"
+export BYTEPS_LOG_LEVEL=DEBUG
 
 export BYTEPS_USE_HASH_KEY=1
-export BPS_HOME="${BPS_HOME:-/root/byteps}"
-export NVIDIA_VISIBLE_DEVICES="${GPUS:-0,1,2,3,4,5,6,7}"
+export BPS_HOME="${BPS_HOME:-/efs/chaokun/byteps/}"
+export NVIDIA_VISIBLE_DEVICES="${GPUS:-0,1,2,3}"
 export DMLC_WORKER_ID="${DMLC_WORKER_ID:-0}"
 export DMLC_NUM_WORKER="${DMLC_NUM_WORKER:-1}"
 export DMLC_ROLE=worker
@@ -29,10 +32,14 @@ export DMLC_ROLE=worker
 export MXNET_EXEC_BULK_EXEC_MAX_NODE_TRAIN_FWD="${MXNET_EXEC_BULK_EXEC_MAX_NODE_TRAIN_FWD:-120}"
 # export MXNET_EXEC_BULK_EXEC_MAX_NODE_TRAIN_BWD="${MXNET_EXEC_BULK_EXEC_MAX_NODE_TRAIN_BWD:-120}"
 export MXNET_SAFE_ACCUMULATION="${MXNET_SAFE_ACCUMULATION:-1}"
-export OPTIONS="${OPTIONS:- }"
+export OPTIONS="${OPTIONS:---synthetic_data --eval_use_npz}"
 export DATA="${DATA:-/data/book-corpus/book-corpus-large-split/*.train,/data/enwiki/enwiki-feb-doc-split/*.train}"
 export DATAEVAL="${DATAEVAL:-/data/book-corpus/book-corpus-large-split/*.test,/data/enwiki/enwiki-feb-doc-split/*.test}"
 export NUM_DATA_THREAD="${NUM_DATA_THREAD:-8}"
+export SLOW_NORM=1
+export BYTEPS_TRACE_ON=1
+export BYTEPS_TRACE_START_STEP=10
+export BYTEPS_TRACE_END_STEP=20
 
 echo $NVIDIA_VISIBLE_DEVICES
 mkdir -p $CKPTDIR
