@@ -149,6 +149,7 @@ parser.add_argument('--local_fs', action='store_true', help='local file system f
 args = parser.parse_args()
 
 # logging
+
 nlp.utils.mkdir(args.ckpt_dir)
 level = logging.DEBUG if args.verbose else logging.INFO
 os.environ['MXNET_GPU_MEM_POOL_TYPE'] = 'Round'
@@ -523,6 +524,10 @@ def train(data_train, data_eval, model):
                     if backend == 'horovod':
                         hvd.allreduce_(local_mlm_loss, average=False, name='local_mlm_loss')
                         hvd.allreduce_(local_num_masks, average=False, name='local_num_masks')
+                        # logging.info('masked_id = {}'.format(masked_id.sum().astype('int32').asscalar()))
+                        # all_masks = masked_id * rank
+                        # hvd.allreduce_(all_masks, average=False, name='masked_id')
+                        # logging.info('all_masks= {}'.format(all_masks.sum().asscalar()))
                     elif backend == 'byteps':
                         bps.byteps_push_pull(local_mlm_loss, is_average=False,
                                              name="local_mlm_loss", priority=0)

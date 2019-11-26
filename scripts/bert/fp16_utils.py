@@ -94,6 +94,7 @@ class LAMB3(Optimizer):
                 zeros(weight.shape, weight.context, dtype=numpy.float32, stype=stype))
 
     def _update_impl(self, indices, weights, grads, states, multi_precision=False):
+
         aggregate = True
         if not isinstance(indices, (tuple, list)):
             indices = [indices]
@@ -110,6 +111,12 @@ class LAMB3(Optimizer):
         lrs = self._get_lrs(indices)
         wds = self._get_wds(indices)
         for idx in indices:
+            try:
+                name = self.idx2name[idx]
+            except KeyError as e:
+                warnings.warn(str(e))
+                name = 'unk'
+
             t = self._index_update_count[idx]
 
             kwargs = {'beta1': self.beta1, 'beta2': self.beta2, 'epsilon': self.epsilon,
@@ -136,6 +143,7 @@ class LAMB3(Optimizer):
             else:
                 for weight, grad, state, lr, wd in zip(weights, grads, states, lrs, wds):
                     mean, var = state
+                    # logging.info("step = {}\t name = {}\t norm = {}".format(t, name, (grad * self.rescale_grad).norm().asscalar()))
                     g = lamb_update_phase1(weight, grad, mean, var, wd=wd, **kwargs)
 
                     kwargs = {}
