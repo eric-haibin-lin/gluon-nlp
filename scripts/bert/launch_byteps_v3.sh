@@ -68,7 +68,7 @@ count=0
 while read -u 10 host;
 do
   host=${host%% slots*}
-  WORKER_CMD="pip3 install networkx --user; cd $NLP_HOME; python3 setup.py develop --user; $WORKER_ENV export DMLC_WORKER_ID=$count; cd scripts/bert; bash bps.sh; sleep infinity"
+  WORKER_CMD="cd /efs/chaokun/byteps/; pip3 install . ;kpip3 install networkx --user; cd $NLP_HOME; python3 setup.py develop --user; $WORKER_ENV export DMLC_WORKER_ID=$count; cd scripts/bert; bash bps.sh; sleep infinity"
   WORKER_CMD_DOCKER="$DOCKER -d $worker_docker bash -c '$WORKER_CMD'"
   ssh -tt -o "StrictHostKeyChecking no" $host "tmux new -d \"$WORKER_CMD_DOCKER\""
   let "count+=1"

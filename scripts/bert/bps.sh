@@ -23,7 +23,7 @@ export BYTEPS_NCCL_GROUP_SIZE="${BYTEPS_NCCL_GROUP_SIZE:-16}"
 export BYTEPS_LOG_LEVEL=DEBUG
 
 export BYTEPS_USE_HASH_KEY=1
-export BPS_HOME="${BPS_HOME:-/usr/local/byteps}"
+export BPS_HOME="${BPS_HOME:-/efs/chaokun/byteps/}"
 export NVIDIA_VISIBLE_DEVICES="${GPUS:-0,1,2,3}"
 export DMLC_WORKER_ID="${DMLC_WORKER_ID:-0}"
 export DMLC_NUM_WORKER="${DMLC_NUM_WORKER:-1}"

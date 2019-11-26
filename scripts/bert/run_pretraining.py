@@ -362,7 +362,7 @@ def train(data_train, data_eval, model):
         trainer = hvd.DistributedTrainer(param_dict, args.optimizer, optim_params)
     elif backend == 'byteps':
         try:
-            trainer = bps.DistributedTrainer(param_dict, args.optimizer, optim_params, block=model)
+            trainer = bps.DistributedTrainer(param_dict, args.optimizer, optim_params, block=model.bert)
         except Exception as e:
             trainer = bps.DistributedTrainer(param_dict, args.optimizer, optim_params)
             print(e, 'skip passing block=model')
