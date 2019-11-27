@@ -258,12 +258,11 @@ mx.random.seed(args.seed + rank)
 np.random.seed(args.seed + rank)
 random.seed(args.seed + rank)
 mx.nd.waitall()
-torch.manual_seed(args.seed + rank)
 logging.info('Random seed set to %d', args.seed + rank)
 
 if int(os.environ.get('HD5', False)):
     import torch
-    torch.manual_seed(args.seed)
+    torch.manual_seed(args.seed + rank)
     from torch.utils.data import DataLoader, RandomSampler, SequentialSampler, Dataset
     import mxnet as mx
     import h5py
