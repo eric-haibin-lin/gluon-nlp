@@ -37,6 +37,28 @@ import argparse
 
 import mxnet as mx
 
+class MyDropout(mx.gluon.HybridBlock):
+    def __init__(self, rate, axes=(), **kwargs):
+        super(MyDropout, self).__init__(**kwargs)
+        self._rate = rate
+        self._axes = axes
+        logging.info('Dropout: cudnn_off=True')
+
+    def hybrid_forward(self, F, x):
+        if self._rate > 0:
+            return F.Dropout(x, p=self._rate, axes=self._axes, name='fwd', cudnn_off=True)
+        else:
+            copy = F.identity
+            return copy(x)
+
+    def __repr__(self):
+        s = '{name}(p = {_rate}, axes={_axes})'
+        return s.format(name=self.__class__.__name__,
+                        **self.__dict__)
+
+if int(os.environ.get('DISABLE_CUDNN_DROPOUT', False)):
+    mx.gluon.nn.Dropout = MyDropout
+
 import gluonnlp as nlp
 try:
     import horovod.mxnet as hvd
