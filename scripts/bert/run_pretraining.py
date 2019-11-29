@@ -276,15 +276,18 @@ eval_mlm_loss = None
 
 import random, numpy as np
 import os
-mx.random.seed(args.seed + rank)
-np.random.seed(args.seed + rank)
-random.seed(args.seed + rank)
+my_seed = args.seed + rank
+if int(os.environ.get('SHARE_SEED', False)):
+    my_seed = args.seed
+mx.random.seed(my_seed)
+np.random.seed(my_seed)
+random.seed(my_seed)
 mx.nd.waitall()
-logging.info('Random seed set to %d', args.seed + rank)
+logging.info('Random seed set to %d', my_seed)
 
 if int(os.environ.get('HD5', False)):
     import torch
-    torch.manual_seed(args.seed + rank)
+    torch.manual_seed(my_seed)
     from torch.utils.data import DataLoader, RandomSampler, SequentialSampler, Dataset
     import mxnet as mx
     import h5py
@@ -293,41 +296,41 @@ if int(os.environ.get('HD5', False)):
     args.synthetic_data = True
 
 if int(os.environ.get('USE_AMP', False)):
-    fp16_fp32_func = [
-    # v1 - diverge
-    # v2 - diverge
-    # v3 - diverge
-    # v4 - diverge
-    'Cast',
-    'cast',
-    'all_finite',
-    'amp_cast',
-    'amp_multicast']
+    #fp16_fp32_func = [
+    ## v1 - diverge
+    ## v2 - diverge
+    ## v3 - diverge
+    ## v4 - diverge
+    #'Cast',
+    #'cast',
+    #'all_finite',
+    #'amp_cast',
+    #'amp_multicast']
 
-    # v5 - diverge
-    wide_func = [
-    ]
+    ## v5 - diverge
+    #wide_func = [
+    #]
 
-    amp.lists.symbol.FP32_FUNCS.extend(amp.lists.symbol.FP16_FP32_FUNCS)
-    amp.lists.symbol.FP32_FUNCS.extend(amp.lists.symbol.WIDEST_TYPE_CASTS)
+    #amp.lists.symbol.FP32_FUNCS.extend(amp.lists.symbol.FP16_FP32_FUNCS)
+    #amp.lists.symbol.FP32_FUNCS.extend(amp.lists.symbol.WIDEST_TYPE_CASTS)
 
-    for f in fp16_fp32_func:
-        amp.lists.symbol.FP32_FUNCS.remove(f)
-    # v7
+    #for f in fp16_fp32_func:
+    #    amp.lists.symbol.FP32_FUNCS.remove(f)
+    ## v7
+    ##amp.lists.symbol.FP32_FUNCS.append('FullyConnected')
+    ##amp.lists.symbol.FP16_FUNCS.remove('FullyConnected')
+    #amp.lists.symbol.FP16_FP32_FUNCS = fp16_fp32_func
+    #amp.lists.symbol.WIDEST_TYPE_CASTS = wide_func
+
+    ## v9
     #amp.lists.symbol.FP32_FUNCS.append('FullyConnected')
     #amp.lists.symbol.FP16_FUNCS.remove('FullyConnected')
-    amp.lists.symbol.FP16_FP32_FUNCS = fp16_fp32_func
-    amp.lists.symbol.WIDEST_TYPE_CASTS = wide_func
-
-    # v9
-    amp.lists.symbol.FP32_FUNCS.append('FullyConnected')
-    amp.lists.symbol.FP16_FUNCS.remove('FullyConnected')
-    amp.init()
-    #amp.amp._loss_scaler._loss_scale = 2.**16
-    #amp.amp._loss_scaler._next_loss_scale = 2.**16
-    # v6 - diverges
-    amp.amp._loss_scaler._loss_scale = 1
-    amp.amp._loss_scaler._next_loss_scale = 1
+    #amp.init()
+    ##amp.amp._loss_scaler._loss_scale = 2.**16
+    ##amp.amp._loss_scaler._next_loss_scale = 2.**16
+    ## v6 - diverges
+    #amp.amp._loss_scaler._loss_scale = 1
+    #amp.amp._loss_scaler._next_loss_scale = 1
     logging.info('AMP set to {}'.format(amp.amp._loss_scaler._next_loss_scale))
 
 def grad_fn(model, acc_grad_dict, ctxs, req='zero'):
