@@ -110,6 +110,9 @@ class GELU(HybridBlock):
 
 
     def hybrid_forward(self, F, x): # pylint: disable=arguments-differ
+        import os
+        if int(os.environ.get('USE_GELU', False)):
+            return F.LeakyReLU(x, act_type='gelu', name='fwd')
         if self._support_erf:
             return x * 0.5 * (1.0 + F.erf(x / math.sqrt(2.0)))
         else:
