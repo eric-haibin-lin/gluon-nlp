@@ -1,27 +1,35 @@
 
 #exit
 pkill python
-#            python -c 'import os; import socket; import mxnet as mx; import horovod.mxnet as hvd; hvd.init(); print(socket.gethostname(), hvd.rank()); x = mx.nd.ones((1)).copyto(mx.gpu(hvd.local_rank())); hvd.allreduce_(x); print(x.asscalar()); import time; time.sleep(5)'
-#exit
 
+set -ex
 	    #-x HOROVOD_TIMELINE=timeline.efa \
+
+	    #--mca plm_rsh_agent "ssh -q -o StrictHostKeyChecking=no -p $PORT" \
+#mpirun -np $NP -display-allocation --allow-run-as-root \
+
+
+#            python -c 'import os; import socket; import mxnet as mx; import horovod.mxnet as hvd; hvd.init(); print(socket.gethostname(), hvd.rank()); x = mx.nd.ones((1024, 1024, 1024), ctx=mx.gpu(hvd.local_rank())); hvd.allreduce_(x); print(x.mean().asscalar()); import time; time.sleep(5)'
+#exit
+            #-x MXNET_GPU_PARALLEL_RAND_COPY=1 \
+            #-x MXNET_GPU_WORKER_NTHREADS=1 \
 
 mpirun -np $NP --hostfile $HOST -display-allocation --allow-run-as-root \
 	    -mca pml ob1 -mca btl ^openib -mca btl_tcp_if_exclude docker0,lo \
             --bind-to none \
-	    --mca plm_rsh_agent "ssh -q -o StrictHostKeyChecking=no -p $PORT" \
             -x NCCL_SOCKET_IFNAME=eth0 \
             -x FI_PROVIDER="efa" -x FI_EFA_TX_MIN_CREDITS=64 \
             -x NCCL_IB_HCA=eth0 \
-            -x NCCL_DEBUG=INFO \
+            -x NCCL_DEBUG=VERSION \
 	    -x NCCL_MIN_NRINGS=$NCCLMINNRINGS \
             -x HOROVOD_FUSION_THRESHOLD=268435456 \
 	    -x HOROVOD_HIERARCHICAL_ALLREDUCE=$HIERARCHICAL \
             -x HOROVOD_NUM_NCCL_STREAMS=2 \
-	    -x HOROVOD_CYCLE_TIME=30 \
+	    -x HOROVOD_CYCLE_TIME=$CYCLETIME \
 	    -x MXNET_EXEC_BULK_EXEC_MAX_NODE_TRAIN_FWD=120 \
             -x NO_DROPOUT=$NO_DROPOUT \
             -x USE_BOUND=$USE_BOUND \
+            -x DISABLE_CUDNN_DROPOUT=0 \
             -x USE_PROJ=$USE_PROJ \
             -x FORCE_WD=$FORCE_WD \
             -x LD_LIBRARY_PATH=$HOME/aws-ofi-nccl/install/lib/:$HOME/nccl/build/lib:/usr/local/cuda-10.0/lib64:/opt/amazon/efa/lib64:$LD_LIBRARY_PATH \
@@ -30,6 +38,7 @@ mpirun -np $NP --hostfile $HOST -display-allocation --allow-run-as-root \
             -x NCCL_TREE_THRESHOLD=15360000 \
             -x ADJUST_BOUND=$ADJUST_BOUND \
             -x TRUNCATE_NORM=$TRUNCATE_NORM \
+            -x SHARE_SEED=0 \
             -x LAMB_BULK=$LAMB_BULK \
             -x EPS_AFTER_SQRT=$EPS_AFTER_SQRT \
             -x SKIP_GLOBAL_CLIP=$SKIP_GLOBAL_CLIP \
@@ -41,10 +50,12 @@ mpirun -np $NP --hostfile $HOST -display-allocation --allow-run-as-root \
             -x REPEAT_SAMPLER=$REPEAT_SAMPLER \
             -x SCALE_NORM=$SCALE_NORM \
             -x MXNET_USE_FUSION=0 \
+            -x USE_GELU=1 \
             -x SM_LENGTH=$SM_LENGTH \
             -x USE_SA=$USE_SA \
             -x MANUAL_ACC=$MANUAL_ACC \
             -x USE_AMP=$USE_AMP \
+            -x SLOW_NORM=0 \
             -x FIX_BERT_ENCODER=1 \
             -x HD5=$HD5 \
             -x NO_SHARD=$NO_SHARD \
