@@ -1,3 +1,4 @@
+#!/bin/bash
 pkill python
 
 export TRUNCATE_NORM="${TRUNCATE_NORM:-1}"
