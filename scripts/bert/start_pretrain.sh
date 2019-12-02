@@ -5,9 +5,9 @@
 # 2) BERT pre-train phase 2 (with seq-len = 512). This requires the checkpoint from (1)
 # =====================================================================
 source parse_yaml.sh
-export CONFIG="${CONFIG:-default.yml}"
+export CONFIG="${CONFIG:-configurations/default.yml}"
 
-PARSED_DEFAULT=$(parse_yaml default.yml)
+PARSED_DEFAULT=$(parse_yaml configurations/default.yml)
 PARSED_NEW=$(parse_yaml $CONFIG)
 eval $PARSED_DEFAULT
 eval $PARSED_NEW

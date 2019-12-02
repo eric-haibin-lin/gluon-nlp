@@ -37,3 +37,6 @@ run-bert-64k-512: prepare-nlp
 
 run-bert-64k-512-multilamb: prepare-nlp
 	ssh -p$(PORT) -i $(KEY_FILE) $(USER)@localhost 'cd $(BERT_DIR) && CONFIG=configurations/64k-512-multilamb.yml bash start_pretrain.sh'
+
+run-bert-64k-512-fp32-sa-len: prepare-nlp
+	ssh -p$(PORT) -i $(KEY_FILE) $(USER)@localhost 'cd $(BERT_DIR) && CONFIG=configurations/64k-512-fp32-sa-len.yml bash start_pretrain.sh'
