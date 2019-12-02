@@ -29,7 +29,7 @@ BERT:
     OPTIONS: --verbose
     NUM_STEPS: 7038
     BS: 65536
-    ACC: 128
+    ACC: 256
     MAX_SEQ_LENGTH: 128
     MAX_PREDICTIONS_PER_SEQ: 20
     LR: 0.006
@@ -41,7 +41,7 @@ BERT:
     OPTIONS: --synthetic_data --verbose
     NUM_STEPS: 1564
     BS: 32768
-    ACC: 512
+    ACC: 1024
     MAX_SEQ_LENGTH: 512
     MAX_PREDICTIONS_PER_SEQ: 80
     LR: 0.004
