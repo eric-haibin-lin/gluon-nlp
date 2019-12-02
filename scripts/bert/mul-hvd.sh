@@ -1,82 +1,71 @@
-
-#exit
 pkill python
 
-set -ex
-	    #-x HOROVOD_TIMELINE=timeline.efa \
-
-	    #--mca plm_rsh_agent "ssh -q -o StrictHostKeyChecking=no -p $PORT" \
-#mpirun -np $NP -display-allocation --allow-run-as-root \
-
-
-#            python -c 'import os; import socket; import mxnet as mx; import horovod.mxnet as hvd; hvd.init(); print(socket.gethostname(), hvd.rank()); x = mx.nd.ones((1024, 1024, 1024), ctx=mx.gpu(hvd.local_rank())); hvd.allreduce_(x); print(x.mean().asscalar()); import time; time.sleep(5)'
-#exit
-            #-x MXNET_GPU_PARALLEL_RAND_COPY=1 \
-            #-x MXNET_GPU_WORKER_NTHREADS=1 \
-
-mpirun -np $NP --hostfile $HOST -display-allocation --allow-run-as-root \
+mpirun -np $BERT_CLUSTER_NP --hostfile $BERT_CLUSTER_HOST -display-allocation --allow-run-as-root \
 	    -mca pml ob1 -mca btl ^openib -mca btl_tcp_if_exclude docker0,lo \
             --bind-to none \
             -x NCCL_SOCKET_IFNAME=eth0 \
-            -x FI_PROVIDER="efa" -x FI_EFA_TX_MIN_CREDITS=64 \
             -x NCCL_IB_HCA=eth0 \
-            -x NCCL_DEBUG=VERSION \
-	    -x NCCL_MIN_NRINGS=$NCCLMINNRINGS \
-            -x HOROVOD_FUSION_THRESHOLD=268435456 \
-	    -x HOROVOD_HIERARCHICAL_ALLREDUCE=$HIERARCHICAL \
-            -x HOROVOD_NUM_NCCL_STREAMS=2 \
-	    -x HOROVOD_CYCLE_TIME=$CYCLETIME \
-	    -x MXNET_EXEC_BULK_EXEC_MAX_NODE_TRAIN_FWD=120 \
-            -x NO_DROPOUT=$NO_DROPOUT \
-            -x USE_BOUND=$USE_BOUND \
-            -x DISABLE_CUDNN_DROPOUT=0 \
-            -x USE_PROJ=$USE_PROJ \
-            -x FORCE_WD=$FORCE_WD \
+            -x FI_PROVIDER="efa" -x FI_EFA_TX_MIN_CREDITS=64 \
             -x LD_LIBRARY_PATH=$HOME/aws-ofi-nccl/install/lib/:$HOME/nccl/build/lib:/usr/local/cuda-10.0/lib64:/opt/amazon/efa/lib64:$LD_LIBRARY_PATH \
-	    -x WINDOW_SIZE=$WINDOW_SIZE \
+	    -x NCCL_MIN_NRINGS=$BERT_NCCL_MIN_NUM_RINGS \
+            -x NCCL_DEBUG=VERSION \
+	    -x HOROVOD_HIERARCHICAL_ALLREDUCE=$BERT_HVD_HIERARCHICAL \
+	    -x HOROVOD_CYCLE_TIME=$BERT_HVD_CYCLE_TIME \
+            -x HOROVOD_NUM_NCCL_STREAMS=2 \
+            -x HOROVOD_FUSION_THRESHOLD=268435456 \
+	    -x MXNET_EXEC_BULK_EXEC_MAX_NODE_TRAIN_FWD=120 \
 	    -x MXNET_SAFE_ACCUMULATION=1 \
+            -x MXNET_GPU_PARALLEL_RAND_COPY=$BERT_ENV_RAND_COPY \
+            -x MXNET_GPU_WORKER_NTHREADS=$BERT_ENV_WORKER_NTHREAD \
+            -x HD5=$BERT_TRAIN_HD5_DATA \
+            -x NO_DROPOUT=$BERT_ENV_NO_DROPOUT \
+            -x DISABLE_CUDNN_DROPOUT=$BERT_ENV_NO_CUDNN_DROPOUT \
+            -x TRUNCATE_NORM=$BERT_ENV_TRUNCATE_NORM \
+            -x SHARE_SEED=$BERT_ENV_SHARE_SEED \
+            -x FP32_LN=$BERT_ENV_FP32_LN \
+            -x FP32_SM=$BERT_ENV_FP32_SM \
+            -x PT_DECAY=$BERT_ENV_PT_DECAY \
+            -x SKIP_STATE_LOADING=$BERT_ENV_SKIP_STATE_LOADING \
+            -x MXNET_USE_FUSION=$BERT_ENV_USE_FUSION \
+            -x USE_GELU=$BERT_ENV_USE_GELU \
+            -x SM_LENGTH=$BERT_ENV_SM_LENGTH \
+            -x USE_SA=$BERT_ENV_USE_SA \
+            -x MANUAL_ACC=$BERT_ENV_MANUAL_ACC \
+            -x USE_AMP=$BERT_ENV_USE_AMP \
+            -x SLOW_NORM=$BERT_ENV_SLOW_NORM \
+            -x NO_SHARD=0 \
+            -x SCALE_NORM=0 \
+            -x USE_PROJ=0 \
+            -x FORCE_WD=0 \
+	    -x WINDOW_SIZE=2000 \
             -x NCCL_TREE_THRESHOLD=15360000 \
-            -x ADJUST_BOUND=$ADJUST_BOUND \
-            -x TRUNCATE_NORM=$TRUNCATE_NORM \
-            -x SHARE_SEED=0 \
-            -x LAMB_BULK=$LAMB_BULK \
-            -x EPS_AFTER_SQRT=$EPS_AFTER_SQRT \
-            -x SKIP_GLOBAL_CLIP=$SKIP_GLOBAL_CLIP \
-            -x FP32_LN=$FP32_LN \
-            -x FP32_SM=$FP32_SM \
-            -x PT_DECAY=$PT_DECAY \
-            -x SKIP_STATE_LOADING=$SKIP_STATE_LOADING \
-            -x RESCALE_FAC=$RESCALE_FAC \
-            -x REPEAT_SAMPLER=$REPEAT_SAMPLER \
-            -x SCALE_NORM=$SCALE_NORM \
-            -x MXNET_USE_FUSION=0 \
-            -x USE_GELU=1 \
-            -x SM_LENGTH=$SM_LENGTH \
-            -x USE_SA=$USE_SA \
-            -x MANUAL_ACC=$MANUAL_ACC \
-            -x USE_AMP=$USE_AMP \
-            -x SLOW_NORM=0 \
+            -x ADJUST_BOUND=0 \
+            -x USE_BOUND=0 \
+            -x LAMB_BULK=60 \
+            -x EPS_AFTER_SQRT=1 \
+            -x SKIP_GLOBAL_CLIP=0 \
+            -x RESCALE_FAC=0 \
+            -x REPEAT_SAMPLER=1 \
             -x FIX_BERT_ENCODER=1 \
-            -x HD5=$HD5 \
-            -x NO_SHARD=$NO_SHARD \
-	    --tag-output ompi_bind_DGX1.sh \
+	    --tag-output \
+            ompi_bind_DGX1.sh \
             python3 run_pretraining.py \
 	    --data="$DATA" \
-	    --data_eval="$DATAEVAL" \
-	    --optimizer $OPTIMIZER \
+	    --data_eval="$DATA_EVAL" \
+	    --optimizer $BERT_TRAIN_OPTIMIZER \
 	    --warmup_ratio $WARMUP_RATIO \
-	    --num_steps $NUMSTEPS \
-	    --ckpt_interval $CKPTINTERVAL \
-	    --dtype $DTYPE \
-	    --ckpt_dir $CKPTDIR \
+	    --num_steps $NUM_STEPS \
+	    --ckpt_interval $BERT_TRAIN_CKPT_INTERVAL \
+	    --dtype $BERT_TRAIN_DTYPE \
+	    --ckpt_dir $BERT_TRAIN_CKPT_DIR \
 	    --lr $LR \
 	    --total_batch_size $BS \
 	    --total_batch_size_eval $BS \
 	    --accumulate $ACC \
-	    --model $MODEL \
+	    --model $BERT_TRAIN_MODEL \
 	    --max_seq_length $MAX_SEQ_LENGTH \
 	    --max_predictions_per_seq $MAX_PREDICTIONS_PER_SEQ \
-	    --num_data_workers $NUM_DATA_THREAD \
-            --eval_interval $EVALINTERVAL \
+	    --num_data_workers 8 \
+            --eval_interval 100000000 \
 	    --no_compute_acc \
-	    --comm_backend horovod --log_interval $LOGINTERVAL $OPTIONS 2>&1 | tee -a $CKPTDIR/mpi.log
+	    --comm_backend horovod --log_interval $BERT_TRAIN_LOG_INTERVAL $OPTIONS 2>&1 | tee -a $BERT_TRAIN_CKPT_DIR/mpi.log

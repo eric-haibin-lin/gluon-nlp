@@ -167,10 +167,24 @@ parser.add_argument('--gpus', type=str, default=None,
 parser.add_argument('--phase2', action='store_true', help='phase 2 training')
 parser.add_argument('--phase1_num_steps', type=int, help='number of steps for phase 1')
 parser.add_argument('--seed', type=int, default=0, help='random seed')
+parser.add_argument('--test_connection', action='store_true', help='test connection')
 parser.add_argument('--local_fs', action='store_true', help='local file system for saving checkpoints')
 args = parser.parse_args()
 
 # logging
+if args.test_connection:
+    import os;
+    import socket;
+    import mxnet as mx;
+    import horovod.mxnet as hvd;
+    hvd.init();
+    print(socket.gethostname(), hvd.rank());
+    x = mx.nd.ones((1024, 1024, 1024), ctx=mx.gpu(hvd.local_rank()));
+    hvd.allreduce_(x);
+    print(x.mean().asscalar());
+    import time; time.sleep(5)
+    hvd.shutdown();
+    exit()
 
 nlp.utils.mkdir(args.ckpt_dir)
 level = logging.DEBUG if args.verbose else logging.INFO
@@ -272,7 +286,7 @@ assert batch_size_eval > 0
 logging.info("{} / {}".format(rank, num_workers))
 
 early_stop = os.environ.get('HOROVOD_TIMELINE', None)
-eval_mlm_loss = None
+eval_mlm_loss = mx.nd.ones((1), ctx=mx.gpu(local_rank))
 
 import random, numpy as np
 import os
@@ -444,7 +458,6 @@ def train(data_train, data_eval, model):
     parallel = nlp.utils.Parallel(num_ctxes if num_ctxes > 1 else 0, parallel_model)
     acc_grad_dict = None
 
-    eval_mlm_loss = mx.nd.ones((1), ctx=mx.gpu(local_rank))
     if backend == 'byteps':
         logging.info('Broadcast local_num_masks tensor')
         bps.byteps_declare_tensor(local_num_masks, "local_num_masks")
@@ -688,7 +701,9 @@ if __name__ == '__main__':
         eval_mlm_loss = evaluate(dataset_eval, model, ctxs, args, batch_size_eval) # args.log_interval, args.dtype, local_rank, 8)
     mx.nd.waitall()
     if backend == 'horovod':
-        hvd.allreduce_(eval_mlm_loss, average=False, name='eval_mlm_loss')
+        hvd.allreduce_(eval_mlm_loss, average=True, name='eval_mlm_loss')
+        eval_mlm_loss.wait_to_read()
+        hvd.shutdown()
     elif backend == 'byteps':
         bps.byteps_push_pull(eval_mlm_loss, is_average=True,
                              name="eval_mlm_loss", priority=0)

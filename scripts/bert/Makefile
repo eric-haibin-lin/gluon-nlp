@@ -1,12 +1,14 @@
 export USER="cluster"
 export CONTAINER_NAME="mxnet-docker"
 export CONTAINER_REGISTRY="haibinlin/bert-docker:test"
-export KEY_FILE=".ssh_cluster_key.pem"
+export KEY_FILE="$(PWD)/.ssh_cluster_key.pem"
+export NLP_PATH="/home/ec2-user/efs/haibin/container/"
+export DATA_PATH="/fsx"
 export PORT=2022
-export HOSTS=hosts
+export HOSTS=localhost
 
 launch-container:
-	clush --hostfile $(HOSTS) "bash $(PWD)/start_container.sh $(CONTAINER_NAME) $(USER) $(CONTAINER_REGISTRY)"
+	clush --hostfile $(HOSTS) "bash $(PWD)/start_container.sh $(CONTAINER_NAME) $(USER) $(CONTAINER_REGISTRY) $(NLP_PATH) $(DATA_PATH)"
 
 sync-key: launch-container
 	docker cp $(CONTAINER_NAME):/home/$(USER)/.ssh/ssh_host_rsa_key $(KEY_FILE)
@@ -16,3 +18,12 @@ sync-host: sync-key
 
 run-nccl: sync-key sync-host
 	ssh -p$(PORT) -i $(KEY_FILE) $(USER)@localhost /opt/benchmarks/run_benchmark.sh nccl
+
+prepare-nlp: sync-key sync-host
+	clush --hostfile $(HOSTS) "ssh -p$(PORT) -i $(KEY_FILE) $(USER)@localhost 'cd /opt/gluon-nlp && python3 setup.py develop --user'"
+
+run-bert-test: prepare-nlp
+	ssh -p$(PORT) -i $(KEY_FILE) $(USER)@localhost 'cd /opt/gluon-nlp/scripts/bert && CONFIG=test.yml bash start_pretrain.sh'
+
+run-bert-64k-8: prepare-nlp
+	ssh -p$(PORT) -i $(KEY_FILE) $(USER)@localhost 'cd /opt/gluon-nlp/scripts/bert && CONFIG=default.yml bash start_pretrain.sh'

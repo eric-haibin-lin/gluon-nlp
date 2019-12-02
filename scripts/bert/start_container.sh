@@ -2,7 +2,8 @@
 CONTAINER_NAME=$1
 CLUSTER_USER=$2
 CONTAINER_REGISTRY=$3
-DATA_PATH=/home/ec2-user/mxnet-data
+NLP_PATH=$4
+DATA_PATH=$5
 
 docker kill $CONTAINER_NAME > /dev/null
 
@@ -18,6 +19,8 @@ nvidia-docker run \
     --ulimit stack=67108864 --ulimit memlock=-1 \
     --ulimit nofile=8192:8192 \
     --security-opt seccomp=unconfined \
+    -v $DATA_PATH:/data \
+    -v $NLP_PATH:/opt/gluon-nlp \
     -v $DATA_PATH:/home/$CLUSTER_USER/mxnet-data \
     -e FI_PROVIDER=\"efa\" \
     --device=/dev/infiniband/uverbs0 \
