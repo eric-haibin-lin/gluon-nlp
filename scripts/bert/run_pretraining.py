@@ -339,13 +339,13 @@ if int(os.environ.get('USE_AMP', False)):
     ## v9
     #amp.lists.symbol.FP32_FUNCS.append('FullyConnected')
     #amp.lists.symbol.FP16_FUNCS.remove('FullyConnected')
-    #amp.init()
+    amp.init()
     ##amp.amp._loss_scaler._loss_scale = 2.**16
     ##amp.amp._loss_scaler._next_loss_scale = 2.**16
     ## v6 - diverges
     #amp.amp._loss_scaler._loss_scale = 1
     #amp.amp._loss_scaler._next_loss_scale = 1
-    logging.info('AMP set to {}'.format(amp.amp._loss_scaler._next_loss_scale))
+    #logging.info('AMP set to {}'.format(amp.amp._loss_scaler._next_loss_scale))
 
 def grad_fn(model, acc_grad_dict, ctxs, req='zero'):
     for k, v in model.collect_params().items():
