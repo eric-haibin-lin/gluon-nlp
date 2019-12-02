@@ -1,0 +1,17 @@
+BERT:
+  CLUSTER:
+    NP: 16
+    HOST: hosts_2
+
+  TRAIN:
+    CKPT_DIR: /data/test-2-ckpt
+
+  PHASE1:
+    DATA_EVAL: ""
+    NUM_STEPS: 12
+    ACC: 128
+  
+  PHASE2:
+    DATA_EVAL: ""
+    NUM_STEPS: 12
+    ACC: 512
