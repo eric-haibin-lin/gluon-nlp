@@ -1,0 +1,14 @@
+BERT:
+  CLUSTER:
+    NP: 512
+    HOST: hosts_64_v2
+
+  TRAIN:
+    CKPT_DIR: /data/container-64k-512-ckpt
+    OPTIMIZER: lamb5
+
+  PHASE1:
+    ACC: 2
+  
+  PHASE2:
+    ACC: 8
