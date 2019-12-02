@@ -9,6 +9,7 @@ export BERT_DIR="/opt/gluon-nlp/scripts/bert"
 export HOSTS ?= "localhost"
 
 launch-container:
+	-$(shell sudo pkill python3)
 	clush --hostfile $(HOSTS) "bash $(PWD)/start_container.sh $(CONTAINER_NAME) $(USER) $(CONTAINER_REGISTRY) $(NLP_PATH) $(DATA_PATH)"
 
 sync-key: launch-container

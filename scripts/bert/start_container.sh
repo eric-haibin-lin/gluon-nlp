@@ -5,6 +5,7 @@ CONTAINER_REGISTRY=$3
 NLP_PATH=$4
 DATA_PATH=$5
 
+sudo pkill python3
 docker kill $CONTAINER_NAME > /dev/null
 
 set -ex

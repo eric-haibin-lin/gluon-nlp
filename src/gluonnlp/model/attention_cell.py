@@ -212,6 +212,8 @@ class MultiHeadSelfAttentionCell(AttentionCell):
                     .reshape(shape=target_shape, reverse=True)
         att_score = F.contrib.interleaved_matmul_selfatt_qk(qkv_proj, heads=self._num_heads)
         att_weights = self.dropout_layer(_masked_softmax(F, att_score, mask, self._dtype))
+        if int(os.environ.get('USE_AMP', False)):
+            att_weights = att_weights.astype('float16')
         context_vec = F.contrib.interleaved_matmul_selfatt_valatt(qkv_proj, att_weights,
                                                           heads=self._num_heads)
         return context_vec, att_weights

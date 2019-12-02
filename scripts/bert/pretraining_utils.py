@@ -436,13 +436,11 @@ def get_model_loss(ctx, model, pretrained, dataset_name, vocab, dtype,
     # losses
     nsp_loss = mx.gluon.loss.SoftmaxCELoss()
     mlm_loss = mx.gluon.loss.SoftmaxCELoss()
-    if not int(os.environ.get('USE_AMP', False)):
-        nsp_loss.hybridize(static_alloc=True, static_shape=True)
-        mlm_loss.hybridize(static_alloc=True, static_shape=True)
+    nsp_loss.hybridize(static_alloc=True, static_shape=True)
+    mlm_loss.hybridize(static_alloc=True, static_shape=True)
 
     model = BERTForPretrain(model, nsp_loss, mlm_loss, len(vocabulary))
-    if not int(os.environ.get('USE_AMP', False)):
-        model.hybridize(static_alloc=True, static_shape=True)
+    model.hybridize(static_alloc=True, static_shape=True)
 
     if load_again:
         param_path = os.path.join(ckpt_dir, '%07d.params'%start_step)

@@ -339,6 +339,8 @@ if int(os.environ.get('USE_AMP', False)):
     ## v9
     #amp.lists.symbol.FP32_FUNCS.append('FullyConnected')
     #amp.lists.symbol.FP16_FUNCS.remove('FullyConnected')
+    amp.lists.symbol.FP16_FUNCS.append('_contrib_interleaved_matmul_encdec_valatt')
+    amp.lists.symbol.FP16_FUNCS.append('_contrib_interleaved_matmul_selfatt_qk')
     amp.init()
     ##amp.amp._loss_scaler._loss_scale = 2.**16
     ##amp.amp._loss_scaler._next_loss_scale = 2.**16
