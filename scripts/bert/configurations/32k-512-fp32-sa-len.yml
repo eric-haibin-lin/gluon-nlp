@@ -1,0 +1,22 @@
+BERT:
+  CLUSTER:
+    NP: 512
+    HOST: hosts_64_v2
+
+  TRAIN:
+    CKPT_DIR: /data/container-32k-512-fp32-sa-len-ckpt
+    DTYPE: float32
+
+  PHASE1:
+    NUM_STEPS: 14076
+    BS: 32768
+    ACC: 2
+    LR: 0.005
+    WARMUP_RATIO: 0.2
+  
+  PHASE2:
+    ACC: 16
+
+  ENV:
+    SM_LENGTH: 1
+    USE_SA: 1

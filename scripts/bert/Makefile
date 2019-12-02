@@ -36,11 +36,17 @@ run-bert-64k-8: prepare-nlp
 run-bert-64k-512: prepare-nlp
 	ssh -p$(PORT) -i $(KEY_FILE) $(USER)@localhost 'cd $(BERT_DIR) && CONFIG=configurations/64k-512.yml bash start_pretrain.sh'
 
+run-bert-64k-512-phase2-0.4-warmup: prepare-nlp
+	ssh -p$(PORT) -i $(KEY_FILE) $(USER)@localhost 'cd $(BERT_DIR) && CONFIG=configurations/64k-512-phase2-0.4-warmup.yml bash start_pretrain.sh'
+
 run-bert-64k-512-multilamb: prepare-nlp
 	ssh -p$(PORT) -i $(KEY_FILE) $(USER)@localhost 'cd $(BERT_DIR) && CONFIG=configurations/64k-512-multilamb.yml bash start_pretrain.sh'
 
 run-bert-64k-512-fp32-sa-len: prepare-nlp
 	ssh -p$(PORT) -i $(KEY_FILE) $(USER)@localhost 'cd $(BERT_DIR) && CONFIG=configurations/64k-512-fp32-sa-len.yml bash start_pretrain.sh'
+
+run-bert-32k-512-fp32-sa-len: prepare-nlp
+	ssh -p$(PORT) -i $(KEY_FILE) $(USER)@localhost 'cd $(BERT_DIR) && CONFIG=configurations/32k-512-fp32-sa-len.yml bash start_pretrain.sh'
 
 run-bert-64k-512-fp32-sa-len-amp: prepare-nlp
 	ssh -p$(PORT) -i $(KEY_FILE) $(USER)@localhost 'cd $(BERT_DIR) && CONFIG=configurations/64k-512-fp32-sa-len-amp.yml bash start_pretrain.sh'
