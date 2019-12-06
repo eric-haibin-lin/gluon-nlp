@@ -1,6 +1,7 @@
 export USER="cluster"
 export CONTAINER_NAME="mxnet-docker"
-export CONTAINER_REGISTRY="haibinlin/bert-docker:test"
+# export CONTAINER_REGISTRY="haibinlin/bert-docker:test"
+export CONTAINER_REGISTRY="haibinlin/bert-docker:2d74f7b"
 export NLP_PATH="/home/ec2-user/efs/haibin/container/"
 export KEY_FILE="$(NLP_PATH)/../.ssh_cluster_key.pem"
 export DATA_PATH="/fsx"
@@ -16,43 +17,13 @@ sync-key: launch-container
 	docker cp $(CONTAINER_NAME):/home/$(USER)/.ssh/ssh_host_rsa_key $(KEY_FILE)
 
 sync-host: sync-key
-	scp -P$(PORT) -i $(KEY_FILE) $(HOSTS) $(USER)@localhost:mpihosts.txt
+	scp -o 'StrictHostKeyChecking=no' -P$(PORT) -i $(KEY_FILE) $(HOSTS) $(USER)@localhost:mpihosts.txt
 
 run-nccl: sync-key sync-host
-	ssh -p$(PORT) -i $(KEY_FILE) $(USER)@localhost /opt/benchmarks/run_benchmark.sh nccl
+	ssh -o 'StrictHostKeyChecking=no' -p$(PORT) -i $(KEY_FILE) $(USER)@localhost /opt/benchmarks/run_benchmark.sh nccl
 
 prepare-nlp: sync-key sync-host
 	clush --hostfile $(HOSTS) "ssh -p$(PORT) -o 'StrictHostKeyChecking=no' -i $(KEY_FILE) $(USER)@localhost 'cd /opt/gluon-nlp && pip3 install . --user'"
 
-run-bert-test-8: prepare-nlp
-	ssh -p$(PORT) -i $(KEY_FILE) $(USER)@localhost 'cd $(BERT_DIR) && CONFIG=configurations/test.yml bash start_pretrain.sh'
-
-run-bert-test-16: prepare-nlp
-	ssh -p$(PORT) -i $(KEY_FILE) $(USER)@localhost 'cd $(BERT_DIR) && CONFIG=configurations/test-2.yml bash start_pretrain.sh'
-
-run-bert-64k-8: prepare-nlp
-	ssh -p$(PORT) -i $(KEY_FILE) $(USER)@localhost 'cd $(BERT_DIR) && CONFIG=configurations/default.yml bash start_pretrain.sh'
-
-run-bert-64k-512: prepare-nlp
-	ssh -p$(PORT) -i $(KEY_FILE) $(USER)@localhost 'cd $(BERT_DIR) && CONFIG=configurations/64k-512.yml bash start_pretrain.sh'
-
-run-bert-32k-512: prepare-nlp
-	ssh -p$(PORT) -i $(KEY_FILE) $(USER)@localhost 'cd $(BERT_DIR) && CONFIG=configurations/32k-512.yml bash start_pretrain.sh'
-
-run-bert-64k-512-phase2-no-cudnn: prepare-nlp
-	ssh -p$(PORT) -i $(KEY_FILE) $(USER)@localhost 'cd $(BERT_DIR) && CONFIG=configurations/64k-512-phase2-no-cudnn.yml bash start_pretrain.sh'
-
-run-bert-64k-512-phase2-0.4-warmup: prepare-nlp
-	ssh -p$(PORT) -i $(KEY_FILE) $(USER)@localhost 'cd $(BERT_DIR) && CONFIG=configurations/64k-512-phase2-0.4-warmup.yml bash start_pretrain.sh'
-
-run-bert-64k-512-multilamb: prepare-nlp
-	ssh -p$(PORT) -i $(KEY_FILE) $(USER)@localhost 'cd $(BERT_DIR) && CONFIG=configurations/64k-512-multilamb.yml bash start_pretrain.sh'
-
-run-bert-64k-512-fp32-sa-len: prepare-nlp
-	ssh -p$(PORT) -i $(KEY_FILE) $(USER)@localhost 'cd $(BERT_DIR) && CONFIG=configurations/64k-512-fp32-sa-len.yml bash start_pretrain.sh'
-
-run-bert-32k-512-fp32-sa-len: prepare-nlp
-	ssh -p$(PORT) -i $(KEY_FILE) $(USER)@localhost 'cd $(BERT_DIR) && CONFIG=configurations/32k-512-fp32-sa-len.yml bash start_pretrain.sh'
-
-run-bert-64k-512-fp32-sa-len-amp: prepare-nlp
-	ssh -p$(PORT) -i $(KEY_FILE) $(USER)@localhost 'cd $(BERT_DIR) && CONFIG=configurations/64k-512-fp32-sa-len-amp.yml bash start_pretrain.sh'
+run-bert-%:: prepare-nlp
+	ssh -o 'StrictHostKeyChecking=no' -p$(PORT) -i $(KEY_FILE) $(USER)@localhost 'cd $(BERT_DIR) && CONFIG=configurations/$*.yml bash start_pretrain.sh $(CONTAINER_REGISTRY)'

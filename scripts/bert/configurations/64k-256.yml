@@ -1,0 +1,13 @@
+BERT:
+  CLUSTER:
+    NP: 256
+    HOST: hosts_32_v2
+
+  TRAIN:
+    CKPT_DIR: /data/container-64k-256-ckpt
+
+  PHASE1:
+    ACC: 4
+  
+  PHASE2:
+    ACC: 16

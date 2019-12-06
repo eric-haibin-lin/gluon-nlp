@@ -4,11 +4,14 @@ BERT:
     HOST: hosts_64_v2
 
   TRAIN:
-    CKPT_DIR: /data/container-64k-512-multilamb-ckpt
-    OPTIMIZER: lamb5
+    CKPT_DIR: /data/container-96k-512-no-gelu-ckpt
 
   PHASE1:
     ACC: 2
+    BS: 98496
   
   PHASE2:
     ACC: 8
+
+  ENV:
+    USE_GELU: 0

@@ -5,6 +5,7 @@
 # 2) BERT pre-train phase 2 (with seq-len = 512). This requires the checkpoint from (1)
 # =====================================================================
 source parse_yaml.sh
+export CONTAINER_REGISTRY=$1
 export CONFIG="${CONFIG:-configurations/default.yml}"
 
 PARSED_DEFAULT=$(parse_yaml configurations/default.yml)
@@ -14,6 +15,7 @@ eval $PARSED_NEW
 
 set -ex
 
+export BERT_TRAIN_CKPT_DIR="$BERT_TRAIN_CKPT_DIR/$CONTAINER_REGISTRY"
 printenv | sort | grep BERT
 mkdir -p $BERT_TRAIN_CKPT_DIR
 cp $CONFIG $BERT_TRAIN_CKPT_DIR/

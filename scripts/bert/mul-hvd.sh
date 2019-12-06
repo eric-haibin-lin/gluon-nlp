@@ -33,6 +33,7 @@ mpirun -np $BERT_CLUSTER_NP --hostfile $BERT_CLUSTER_HOST -display-allocation --
             -x MANUAL_ACC=$BERT_ENV_MANUAL_ACC \
             -x USE_AMP=$BERT_ENV_USE_AMP \
             -x SLOW_NORM=$BERT_ENV_SLOW_NORM \
+            -x MXNET_OPTIMIZER_AGGREGATION_SIZE=$BERT_ENV_MXNET_OPTIMIZER_AGGREGATION_SIZE \
             -x NO_SHARD=0 \
             -x SCALE_NORM=0 \
             -x USE_PROJ=0 \

@@ -1,0 +1,25 @@
+BERT:
+  CLUSTER:
+    NP: 512
+    HOST: hosts_64_v2
+
+  TRAIN:
+    CKPT_DIR: /data/container-64k-512-multilamb2-repro-ckpt
+    OPTIMIZER: lamb6
+    CKPT_INTERVAL: 50
+    LOG_INTERVAL: 1
+
+  RUN:
+    PHASE1: 1
+    PHASE2: 0
+
+  PHASE1:
+    ACC: 2
+    OPTIONS: --verbose --start_step 0
+  
+  PHASE2:
+    ACC: 8
+
+  ENV:
+    SKIP_STATE_LOADING: 0
+    MXNET_OPTIMIZER_AGGREGATION_SIZE: 50

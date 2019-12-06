@@ -4,11 +4,12 @@ BERT:
     HOST: hosts_64_v2
 
   TRAIN:
-    CKPT_DIR: /data/container-64k-512-multilamb-ckpt
+    CKPT_DIR: /data/container-64k-512-fp32-multilamb-ckpt
+    DTYPE: float32
     OPTIMIZER: lamb5
 
   PHASE1:
-    ACC: 2
+    ACC: 4
   
   PHASE2:
-    ACC: 8
+    ACC: 16
