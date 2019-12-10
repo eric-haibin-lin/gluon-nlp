@@ -10,8 +10,8 @@ num_physical_server=1
 server_hosts=localhost
 worker_hosts=localhost
 
-server_docker=haibinlin/byteps-server:c5fd6fc
-worker_docker=haibinlin/worker_mxnet:bps-3291412-mx-cu100-87fe065
+server_docker=haibinlin/worker_mxnet:bps-e5dc635d7-mx-cu100-3ccd7ad
+worker_docker=haibinlin/worker_mxnet:bps-e5dc635d7-mx-cu100-3ccd7ad
 
 HOME=/home/ec2-user
 USERNAME=chaokun
@@ -34,8 +34,8 @@ SERVER_ENV="$COMMON_ENV \
 DOCKER="nvidia-docker run -v $HOME/.ssh:/root/.ssh -v $HOME/efs/$USERNAME:/efs/$USERNAME --network=host --shm-size=32768m"
 LAUNCHER="/usr/local/byteps/launcher/launch.py"
 NLP_HOME="/efs/$USERNAME/gluon-nlp"
-SCHED_CMD="$SERVER_ENV export DMLC_ROLE=scheduler; python $LAUNCHER"
-SERVER_CMD="$SERVER_ENV export DMLC_ROLE=server; python $LAUNCHER"
+SCHED_CMD="$SERVER_ENV export DMLC_ROLE=scheduler; python3 $LAUNCHER"
+SERVER_CMD="$SERVER_ENV export DMLC_ROLE=server; python3 $LAUNCHER"
 
 SCHED_TMUX="tmux new -d \"$DOCKER -d $server_docker bash -c '$SCHED_CMD'\""
 
@@ -59,8 +59,8 @@ done;
 CKPTDIR="/efs/$USERNAME/ckpt-test"
 
 WORKER_ENV="$COMMON_ENV \
-            export DATA=$NLP_HOME/scripts/bert/sample.txt; \
-            export DATAEVAL=$NLP_HOME/scripts/bert/sample.txt; \
+            export DATA=$NLP_HOME/scripts/bert/sample_text.txt; \
+            export DATAEVAL=$NLP_HOME/scripts/bert/sample_text.txt; \
             export BYTEPS_TRACE_DIR=/efs/$USERNAME/bert_traces; \
             export CKPTDIR=$CKPTDIR;"
 
@@ -68,7 +68,8 @@ count=0
 while read -u 10 host;
 do
   host=${host%% slots*}
-  WORKER_CMD="cd /efs/chaokun/byteps/; pip3 install . ;kpip3 install networkx --user; cd $NLP_HOME; python3 setup.py develop --user; $WORKER_ENV export DMLC_WORKER_ID=$count; cd scripts/bert; bash bps.sh; sleep infinity"
+  # WORKER_CMD="cd /efs/chaokun/byteps/; pip3 uninstall byteps -y; pip3 install . ; pip3 install networkx --user; cd $NLP_HOME; python3 setup.py develop --user; $WORKER_ENV export DMLC_WORKER_ID=$count; cd scripts/bert; bash bps.sh; sleep infinity"
+  WORKER_CMD="cd $NLP_HOME; python3 setup.py develop --user; $WORKER_ENV export DMLC_WORKER_ID=$count; cd scripts/bert; bash bps.sh; sleep infinity"
   WORKER_CMD_DOCKER="$DOCKER -d $worker_docker bash -c '$WORKER_CMD'"
   ssh -tt -o "StrictHostKeyChecking no" $host "tmux new -d \"$WORKER_CMD_DOCKER\""
   let "count+=1"
