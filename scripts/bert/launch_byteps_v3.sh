@@ -1,26 +1,38 @@
 ### CLUSTER VARIABLES
 set -ex
-export DMLC_NUM_WORKER=1
-export DMLC_NUM_SERVER=1
-# XXX: this cannot be hostname
-export DMLC_PS_ROOT_URI=172.31.3.59
-export DMLC_PS_ROOT_PORT="${DMLC_PS_ROOT_PORT:-12329}"
+# FIXME: this cannot be hostname
+export DMLC_PS_ROOT_URI=172.31.4.79
+export DMLC_PS_ROOT_PORT="${DMLC_PS_ROOT_PORT:-12332}"
+export CONFIG="${CONFIG=-configurations/test.yml}"
 
-num_physical_server=1
-server_hosts=localhost
-worker_hosts=localhost
+export DMLC_NUM_WORKER=64
+export DMLC_NUM_SERVER=32
+num_physical_server=32
+server_hosts=/home/ec2-user/server_32
+worker_hosts=hosts_64_v2.hosts
+#worker_hosts=hosts_32_v2.hosts
 
-server_docker=haibinlin/worker_mxnet:bps-e5dc635d7-mx-cu100-3ccd7ad
-worker_docker=haibinlin/worker_mxnet:bps-e5dc635d7-mx-cu100-3ccd7ad
+#export DMLC_NUM_WORKER=1
+#export DMLC_NUM_SERVER=1
+#num_physical_server=1
+#server_hosts=localhost
+#worker_hosts=localhost
+#LAUNCHER="/usr/local/byteps/3rdparty/ps-lite/tests/test_kv_app_benchmark "
+#SCHED_CMD="set -ex; $COMMON_ENV export DMLC_ROLE=scheduler; $LAUNCHER"
+#SERVER_CMD="set -ex; $SERVER_ENV export DMLC_ROLE=server; $LAUNCHER"
+
+worker_docker=haibinlin/worker_mxnet:bps-7cde360-mx-cu100-016e6d56
+server_docker=haibinlin/worker_mxnet:bps-7cde360-mx-cu100-016e6d56
 
 HOME=/home/ec2-user
-USERNAME=chaokun
+USERNAME=haibin
+NLP_HOME="/efs/$USERNAME/container"
 
 docker pull "$server_docker"
 clush --hostfile $server_hosts 'sudo pkill python; sudo pkill sleep; docker kill $(docker ps -q); docker pull "$server_docker"'
 clush --hostfile $worker_hosts 'sudo pkill python; sudo pkill sleep; docker kill $(docker ps -q); docker pull "$worker_docker"'
 
-### BYTEPS ENV VARS
+### BYTEPS ENV VAR
 COMMON_ENV="export DMLC_NUM_WORKER=$DMLC_NUM_WORKER; \
             export DMLC_NUM_SERVER=$DMLC_NUM_SERVER; \
             export DMLC_PS_ROOT_URI=$DMLC_PS_ROOT_URI; \
@@ -29,15 +41,14 @@ COMMON_ENV="export DMLC_NUM_WORKER=$DMLC_NUM_WORKER; \
 SERVER_ENV="$COMMON_ENV \
             export SERVER_PUSH_NTHREADS=1; \
             export MXNET_OMP_MAX_THREADS=8; \
-            export MXNET_CPU_WORKER_NTHREADS=1;"
+            export MXNET_CPU_WORKER_NTHREADS=4;"
 
-DOCKER="nvidia-docker run -v $HOME/.ssh:/root/.ssh -v $HOME/efs/$USERNAME:/efs/$USERNAME --network=host --shm-size=32768m"
+DOCKER="run -v $HOME/.ssh:/root/.ssh -v $HOME/efs/$USERNAME:/efs/$USERNAME -v /fsx:/data --network=host --shm-size=32768m"
 LAUNCHER="/usr/local/byteps/launcher/launch.py"
-NLP_HOME="/efs/$USERNAME/gluon-nlp"
-SCHED_CMD="$SERVER_ENV export DMLC_ROLE=scheduler; python3 $LAUNCHER"
-SERVER_CMD="$SERVER_ENV export DMLC_ROLE=server; python3 $LAUNCHER"
+SCHED_CMD="$COMMON_ENV export DMLC_ROLE=scheduler; python3 $LAUNCHER"
+SERVER_CMD="$SERVER_ENV export DMLC_ROLE=server; export BYTEPS_SERVER_ENABLE_PROFILE=1; python3 $LAUNCHER"
 
-SCHED_TMUX="tmux new -d \"$DOCKER -d $server_docker bash -c '$SCHED_CMD'\""
+SCHED_TMUX="tmux new -d \"docker $DOCKER -d $server_docker bash -c '$SCHED_CMD'\""
 
 ssh -o "StrictHostKeyChecking no" $DMLC_PS_ROOT_URI "$SCHED_TMUX"
 
@@ -49,28 +60,20 @@ do
   then
     break
   fi
-  SERVER_CMD_DOCKER="$DOCKER -d $server_docker bash -c '$SERVER_CMD'"
+  SERVER_CMD_DOCKER="docker $DOCKER -d $server_docker bash -c '$SERVER_CMD'"
   clush --hostfile $server_hosts "$SERVER_CMD_DOCKER"
-  echo "launched $num_physical_server servers"
   let "num_server_iter+=1"
 done;
 
-## TRAINING SCRIPT ARGUMENTS
-CKPTDIR="/efs/$USERNAME/ckpt-test"
-
-WORKER_ENV="$COMMON_ENV \
-            export DATA=$NLP_HOME/scripts/bert/sample_text.txt; \
-            export DATAEVAL=$NLP_HOME/scripts/bert/sample_text.txt; \
-            export BYTEPS_TRACE_DIR=/efs/$USERNAME/bert_traces; \
-            export CKPTDIR=$CKPTDIR;"
+WORKER_ENV="$COMMON_ENV export DMLC_ROLE=worker; export BACKEND='byteps'; "
 
 count=0
 while read -u 10 host;
 do
   host=${host%% slots*}
-  # WORKER_CMD="cd /efs/chaokun/byteps/; pip3 uninstall byteps -y; pip3 install . ; pip3 install networkx --user; cd $NLP_HOME; python3 setup.py develop --user; $WORKER_ENV export DMLC_WORKER_ID=$count; cd scripts/bert; bash bps.sh; sleep infinity"
-  WORKER_CMD="cd $NLP_HOME; python3 setup.py develop --user; $WORKER_ENV export DMLC_WORKER_ID=$count; cd scripts/bert; bash bps.sh; sleep infinity"
-  WORKER_CMD_DOCKER="$DOCKER -d $worker_docker bash -c '$WORKER_CMD'"
+  WORKER_CMD="cp -r $NLP_HOME ~/gluon-nlp; cd ~/gluon-nlp; python3 setup.py develop --user; $WORKER_ENV export DMLC_WORKER_ID=$count; cd scripts/bert; export CONFIG=$CONFIG; bash start_pretrain.sh $worker_docker; sleep infinity"
+  echo $WORKER_CMD > .$count.sh
+  WORKER_CMD_DOCKER="nvidia-docker $DOCKER --name byteps --rm $worker_docker bash $NLP_HOME/scripts/bert/.$count.sh; sleep infinity" 
   ssh -tt -o "StrictHostKeyChecking no" $host "tmux new -d \"$WORKER_CMD_DOCKER\""
   let "count+=1"
 done 10<$worker_hosts;

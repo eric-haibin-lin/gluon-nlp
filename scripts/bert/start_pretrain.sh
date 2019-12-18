@@ -7,6 +7,7 @@
 source parse_yaml.sh
 export CONTAINER_REGISTRY=$1
 export CONFIG="${CONFIG:-configurations/default.yml}"
+export BACKEND="${BACKEND:-horovod}"
 
 PARSED_DEFAULT=$(parse_yaml configurations/default.yml)
 PARSED_NEW=$(parse_yaml $CONFIG)
@@ -34,7 +35,11 @@ if [ "$BERT_RUN_PHASE1" = "1" ]; then
     export MAX_PREDICTIONS_PER_SEQ=$BERT_PHASE1_MAX_PREDICTIONS_PER_SEQ
     export LR=$BERT_PHASE1_LR
     export WARMUP_RATIO=$BERT_PHASE1_WARMUP_RATIO
-    bash mul-hvd.sh
+    if [ "$BACKEND" = 'horovod' ]; then
+        bash mul-hvd.sh
+    else
+        bash bps.sh
+    fi
     echo 'DONE PHASE1'
 fi
 
@@ -53,6 +58,10 @@ if [ "$BERT_RUN_PHASE2" = "1" ]; then
     export LR=$BERT_PHASE2_LR
     export WARMUP_RATIO=$BERT_PHASE2_WARMUP_RATIO
     export OPTIONS="$OPTIONS --phase2 --phase1_num_steps=$BERT_PHASE1_NUM_STEPS --start_step=$BERT_PHASE1_NUM_STEPS"
-    bash mul-hvd.sh
+    if [ "$BACKEND" = 'horovod' ]; then
+        bash mul-hvd.sh
+    else
+        bash bps.sh
+    fi
     echo 'DONE PHASE2'
 fi

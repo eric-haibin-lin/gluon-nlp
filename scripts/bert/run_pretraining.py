@@ -68,7 +68,10 @@ try:
     import byteps.mxnet as bps
 except ImportError:
     pass
-from mxnet.contrib import amp
+try:
+    from mxnet.contrib import amp
+except ImportError:
+    pass
 
 from fp16_utils import FP16Trainer
 from pretraining_utils import get_model_loss, get_pretrain_data_npz, get_dummy_dataloader
@@ -290,6 +293,9 @@ eval_mlm_loss = mx.nd.ones((1), ctx=mx.gpu(local_rank))
 
 import random, numpy as np
 import os
+env_seed = os.environ.get('MXNET_SEED', args.seed)
+if env_seed:
+    args.seed = int(env_seed)
 my_seed = args.seed + rank
 if int(os.environ.get('SHARE_SEED', False)):
     my_seed = args.seed
@@ -404,7 +410,7 @@ def train(data_train, data_eval, model):
     elif backend == 'byteps':
         try:
             trainer = bps.DistributedTrainer(param_dict, args.optimizer, optim_params, block=model.bert)
-        except Exception as e:
+        except TypeError as e:
             trainer = bps.DistributedTrainer(param_dict, args.optimizer, optim_params)
             print(e, 'skip passing block=model')
     else:
@@ -462,13 +468,13 @@ def train(data_train, data_eval, model):
 
     if backend == 'byteps':
         logging.info('Broadcast local_num_masks tensor')
-        bps.byteps_declare_tensor(local_num_masks, "local_num_masks")
+        bps.byteps_declare_tensor("local_num_masks")
         bps.byteps_push_pull(local_num_masks, is_average=False, name="local_num_masks", priority=0)
         local_num_masks.wait_to_read()
-        bps.byteps_declare_tensor(eval_mlm_loss, "eval_mlm_loss")
+        bps.byteps_declare_tensor("eval_mlm_loss")
         bps.byteps_push_pull(eval_mlm_loss, is_average=True, name="eval_mlm_loss", priority=0)
         eval_mlm_loss.wait_to_read()
-        bps.byteps_declare_tensor(local_mlm_loss, "local_mlm_loss")
+        bps.byteps_declare_tensor("local_mlm_loss")
         bps.byteps_push_pull(local_mlm_loss, is_average=False, name="local_mlm_loss", priority=0)
         local_mlm_loss.wait_to_read()
         logging.info('Broadcast local_num_masks tensor DONE')
@@ -597,7 +603,7 @@ def train(data_train, data_eval, model):
             if (step_num + 1) % (args.log_interval) == 0 and (batch_num + 1) % accumulate == 0:
                 if args.no_compute_acc:
                     mlm_scalar = log_noacc(begin_time, running_num_tks, running_mlm_loss,
-                              0, step_num, trainer, args.log_interval)
+                              ls2, step_num, trainer, args.log_interval)
                 else:
                     log(begin_time, running_num_tks, running_mlm_loss / accumulate,
                         running_nsp_loss / accumulate, step_num, mlm_metric, nsp_metric,

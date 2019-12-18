@@ -8,12 +8,12 @@ mpirun -np $BERT_CLUSTER_NP --hostfile $BERT_CLUSTER_HOST -display-allocation --
             -x FI_PROVIDER="efa" -x FI_EFA_TX_MIN_CREDITS=64 \
             -x LD_LIBRARY_PATH=$HOME/aws-ofi-nccl/install/lib/:$HOME/nccl/build/lib:/usr/local/cuda-10.0/lib64:/opt/amazon/efa/lib64:$LD_LIBRARY_PATH \
 	    -x NCCL_MIN_NRINGS=$BERT_NCCL_MIN_NUM_RINGS \
-            -x NCCL_DEBUG=VERSION \
+            -x NCCL_DEBUG=INFO \
 	    -x HOROVOD_HIERARCHICAL_ALLREDUCE=$BERT_HVD_HIERARCHICAL \
 	    -x HOROVOD_CYCLE_TIME=$BERT_HVD_CYCLE_TIME \
-            -x HOROVOD_NUM_NCCL_STREAMS=2 \
+            -x HOROVOD_NUM_NCCL_STREAMS=1 \
             -x HOROVOD_FUSION_THRESHOLD=268435456 \
-	    -x MXNET_EXEC_BULK_EXEC_MAX_NODE_TRAIN_FWD=120 \
+	    -x MXNET_EXEC_BULK_EXEC_MAX_NODE_TRAIN_FWD=99999 \
 	    -x MXNET_SAFE_ACCUMULATION=1 \
             -x MXNET_GPU_PARALLEL_RAND_COPY=$BERT_ENV_RAND_COPY \
             -x MXNET_GPU_WORKER_NTHREADS=$BERT_ENV_WORKER_NTHREAD \
@@ -33,7 +33,9 @@ mpirun -np $BERT_CLUSTER_NP --hostfile $BERT_CLUSTER_HOST -display-allocation --
             -x MANUAL_ACC=$BERT_ENV_MANUAL_ACC \
             -x USE_AMP=$BERT_ENV_USE_AMP \
             -x SLOW_NORM=$BERT_ENV_SLOW_NORM \
+            -x MXNET_SEED=$BERT_ENV_MXNET_SEED \
             -x MXNET_OPTIMIZER_AGGREGATION_SIZE=$BERT_ENV_MXNET_OPTIMIZER_AGGREGATION_SIZE \
+            -x PER_STEP_NORM=$BERT_ENV_PER_STEP_NORM \
             -x NO_SHARD=0 \
             -x SCALE_NORM=0 \
             -x USE_PROJ=0 \
@@ -48,6 +50,8 @@ mpirun -np $BERT_CLUSTER_NP --hostfile $BERT_CLUSTER_HOST -display-allocation --
             -x RESCALE_FAC=0 \
             -x REPEAT_SAMPLER=1 \
             -x FIX_BERT_ENCODER=1 \
+            -x SKIP_COMM=0 \
+            -x NO_HYBRIDIZE=$BERT_ENV_NO_HYBRIDIZE \
 	    --tag-output \
             ompi_bind_DGX1.sh \
             python3 run_pretraining.py \
