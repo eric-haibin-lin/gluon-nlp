@@ -20,7 +20,7 @@ import warnings
 import numpy
 from mxnet.optimizer import Optimizer, register
 from mxnet.ndarray import zeros, NDArray, full
-from mxnet.ndarray.contrib import mp_adamw_update, adamw_update
+#from mxnet.ndarray.contrib import mp_adamw_update, adamw_update
 
 __all__ = ['BERTAdam']
 

@@ -23,7 +23,7 @@ import numpy as np
 import mxnet as mx
 from mxnet.gluon.block import HybridBlock
 from mxnet.gluon import nn
-from mxnet.contrib.amp import amp
+#from mxnet.contrib.amp import amp
 from .block import L2Normalization
 
 
@@ -44,12 +44,12 @@ def _apply_mask(F, att_score, mask, dtype):
     """
     # Fill in the masked scores with a very small value
     neg = -1e18
-    if np.dtype(dtype) == np.float16:
-        neg = -1e4
-    else:
-        # if AMP (automatic mixed precision) is enabled, -1e18 will cause NaN.
-        if amp._amp_initialized:
-            neg = -1e4
+    #if np.dtype(dtype) == np.float16:
+    #    neg = -1e4
+    #else:
+    #     if AMP (automatic mixed precision) is enabled, -1e18 will cause NaN.
+    #    if amp._amp_initialized:
+    #        neg = -1e4
     att_score = F.where(mask, att_score, neg * F.ones_like(att_score))
     return att_score
 

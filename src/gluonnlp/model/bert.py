@@ -103,6 +103,7 @@ class BERTEncoder(HybridBlock, Seq2SeqEncoder):
                  bias_initializer='zeros', prefix=None, params=None, activation='gelu',
                  layer_norm_eps=1e-12):
         super().__init__(prefix=prefix, params=params)
+        self._dtype = 'float32'
         assert units % num_heads == 0,\
             'In BERTEncoder, The units should be divided exactly ' \
             'by the number of heads. Received units={}, num_heads={}' \
@@ -130,6 +131,10 @@ class BERTEncoder(HybridBlock, Seq2SeqEncoder):
                     activation=activation, layer_norm_eps=layer_norm_eps)
                 self.transformer_cells.add(cell)
 
+    def cast(self, dtype):
+        self._dtype = dtype
+        super().cast(dtype)
+
     def __call__(self, inputs, states=None, valid_length=None): #pylint: disable=arguments-differ
         """Encode the inputs given the states and valid sequence length.
 
@@ -152,6 +157,19 @@ class BERTEncoder(HybridBlock, Seq2SeqEncoder):
             - additional_outputs of all the transformer encoder
         """
         return super().__call__(inputs, states, valid_length)
+
+    def _arange_like(self, F, inputs, axis):
+        """Helper function to generate indices of a range"""
+        if F == mx.ndarray:
+            seq_len = inputs.shape[axis]
+            arange = F.arange(seq_len, dtype=inputs.dtype, ctx=inputs.context)
+        else:
+            input_axis = inputs.slice(begin=(0, 0, 0), end=(1, None, 1)).reshape((-1))
+            zeros = F.zeros_like(input_axis)
+            arange = F.arange(start=0, repeat=1, step=1,
+                              infer_range=True, dtype=self._dtype)
+            arange = F.elemwise_add(arange, zeros)
+        return arange
 
     def hybrid_forward(self, F, inputs, states=None, valid_length=None, position_weight=None):
         # pylint: disable=arguments-differ
@@ -179,7 +197,7 @@ class BERTEncoder(HybridBlock, Seq2SeqEncoder):
             (batch_size, num_heads, length, length)
 
         """
-        steps = F.contrib.arange_like(inputs, axis=1)
+        steps = self._arange_like(F, inputs, axis=1)
         if valid_length is not None:
             ones = F.ones_like(steps)
             mask = F.broadcast_lesser(F.reshape(steps, shape=(1, -1)),
@@ -306,6 +324,7 @@ class BERTModel(HybridBlock):
                  word_embed=None, token_type_embed=None, use_pooler=True, use_decoder=True,
                  use_classifier=True, use_token_type_embed=True, prefix=None, params=None):
         super().__init__(prefix=prefix, params=params)
+        self._dtype = 'float32'
         self._use_decoder = use_decoder
         self._use_classifier = use_classifier
         self._use_pooler = use_pooler
@@ -438,6 +457,22 @@ class BERTModel(HybridBlock):
         outputs = outputs.reshape(shape=(-1, self._units))
         return self.pooler(outputs)
 
+    def _arange_like(self, F, inputs):
+        """Helper function to generate int32 indices of a range"""
+        inputs = inputs.reshape(-1)
+        if F == mx.ndarray:
+            seq_len = inputs.shape[0]
+            arange = F.arange(seq_len, dtype=inputs.dtype, ctx=inputs.context)
+        else:
+            zeros = F.zeros_like(inputs)
+            arange = F.arange(start=0, repeat=1, step=1, infer_range=True, dtype='int32')
+            arange = F.elemwise_add(arange, zeros)
+        return arange
+
+    def cast(self, dtype):
+        self._dtype = dtype
+        super().cast(dtype)
+
     def _decode(self, F, sequence, masked_positions):
         """Generate unnormalized prediction for the masked language model task.
 
@@ -457,7 +492,7 @@ class BERTModel(HybridBlock):
         masked_positions = masked_positions.astype('int32')
         mask_shape = masked_positions.shape_array()
         num_masked_positions = mask_shape.slice(begin=(1,), end=(2,)).astype('int32')
-        idx_arange = F.contrib.arange_like(masked_positions.reshape((-1, )), axis=0)
+        idx_arange = self._arange_like(F, masked_positions.reshape((-1, )))
         batch_idx = F.broadcast_div(idx_arange, num_masked_positions)
         # batch_idx_1d =        [0,0,0,1,1,1,2,2,2...]
         # masked_positions_1d = [1,2,4,0,3,4,2,3,5...]

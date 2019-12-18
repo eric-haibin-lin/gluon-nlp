@@ -93,6 +93,15 @@ parser.add_argument('--dropout',
                     default=0.1,
                     help='The dropout probability for the classification/regression head.')
 
+parser.add_argument('--dtype',
+                    type=str,
+                    default='float32',
+                    help='The data type of the model and parameters.')
+
+parser.add_argument('--gpu',
+                    action='store_true',
+                    help='use GPU for inference')
+
 args = parser.parse_args()
 
 # create output dir
@@ -122,6 +131,7 @@ log.info(args)
 ###############################################################################
 
 seq_length = args.seq_length
+ctx = mx.gpu() if args.gpu else mx.cpu()
 
 if args.task == 'classification':
     bert, _ = get_model(
@@ -154,13 +164,14 @@ else:
     raise ValueError('unknown task: %s'%args.task)
 
 if args.model_parameters:
-    net.load_parameters(args.model_parameters)
+    net.load_parameters(args.model_parameters, ctx=ctx)
 else:
-    net.initialize()
+    net.initialize(ctx=ctx)
     warnings.warn('--model_parameters is not provided. The parameter checkpoint (.params) '
                   'file will be created based on default parameter initialization.')
 
 net.hybridize(static_alloc=True, static_shape=True)
+net.cast(args.dtype)
 
 ###############################################################################
 #                            Prepare dummy input data                         #
@@ -168,10 +179,10 @@ net.hybridize(static_alloc=True, static_shape=True)
 
 test_batch_size = 1
 
-inputs = mx.nd.arange(test_batch_size * seq_length)
-inputs = inputs.reshape(shape=(test_batch_size, seq_length))
-token_types = mx.nd.zeros_like(inputs)
-valid_length = mx.nd.arange(test_batch_size)
+inputs = mx.nd.arange(test_batch_size * seq_length).as_in_context(ctx)
+inputs = inputs.reshape(shape=(test_batch_size, seq_length)).as_in_context(ctx)
+token_types = mx.nd.zeros_like(inputs).as_in_context(ctx)
+valid_length = mx.nd.arange(test_batch_size).astype(args.dtype).as_in_context(ctx)
 batch = inputs, token_types, valid_length
 
 def export(batch, prefix):
@@ -193,10 +204,10 @@ def infer(prefix):
                                                    prefix + '-0000.params')
 
     # exported model should be length-agnostic. Using a different seq_length should work
-    inputs = mx.nd.arange(test_batch_size * (seq_length + 10))
-    inputs = inputs.reshape(shape=(test_batch_size, seq_length + 10))
-    token_types = mx.nd.zeros_like(inputs)
-    valid_length = mx.nd.arange(test_batch_size)
+    inputs = mx.nd.arange(test_batch_size * (seq_length + 10)).as_in_context(ctx)
+    inputs = inputs.reshape(shape=(test_batch_size, seq_length + 10)).as_in_context(ctx)
+    token_types = mx.nd.zeros_like(inputs).as_in_context(ctx)
+    valid_length = mx.nd.arange(test_batch_size).as_in_context(ctx)
 
     # run forward inference
     imported_net(inputs, token_types, valid_length)

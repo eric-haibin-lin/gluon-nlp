@@ -103,7 +103,7 @@ class GELU(HybridBlock):
 
     """
 
-    def __init__(self, approximate=False, prefix=None, params=None):
+    def __init__(self, approximate=True, prefix=None, params=None):
         super().__init__(prefix=prefix, params=params)
         self._approximate = approximate
 
