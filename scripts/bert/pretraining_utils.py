@@ -365,11 +365,12 @@ if int(os.environ.get('USE_SA', False)):
     nlp.model.transformer.BaseTransformerEncoder.hybrid_forward = _transformer_hybrid_forward
 
 class RepeatSplitSampler(nlp.data.SplitSampler):
-    def __init__(self, length, num_parts=1, part_index=0, repeat=40):
+    def __init__(self, length, num_parts=1, part_index=0, repeat=100):
         super(RepeatSplitSampler, self).__init__(length, num_parts=num_parts, part_index=part_index)
         self.repeat = repeat
 
     def __iter__(self):
+        print('a new round of iterations')
         l = []
         for i in range(self.repeat):
             l.extend(list(super(RepeatSplitSampler, self).__iter__()))
@@ -429,22 +430,24 @@ def get_model_loss(ctx, model, pretrained, dataset_name, vocab, dtype,
     if ckpt_dir and start_step:
         param_path = os.path.join(ckpt_dir, '%07d.params'%start_step)
         try:
-            nlp.utils.load_parameters(model, param_path, ctx=ctx, cast_dtype=True)
+            nlp.utils.load_parameters(model, param_path, ctx=ctx)#, cast_dtype=True)
             logging.info('Loading step %d checkpoints from %s.', start_step, param_path)
         except AssertionError:
             load_again = True
     # losses
     nsp_loss = mx.gluon.loss.SoftmaxCELoss()
     mlm_loss = mx.gluon.loss.SoftmaxCELoss()
-    nsp_loss.hybridize(static_alloc=True, static_shape=True)
-    mlm_loss.hybridize(static_alloc=True, static_shape=True)
+    if not int('0' + os.environ.get('NO_HYBRIDIZE', '0')):
+        nsp_loss.hybridize(static_alloc=True, static_shape=True)
+        mlm_loss.hybridize(static_alloc=True, static_shape=True)
 
     model = BERTForPretrain(model, nsp_loss, mlm_loss, len(vocabulary))
-    model.hybridize(static_alloc=True, static_shape=True)
+    if not int('0' + os.environ.get('NO_HYBRIDIZE', '0')):
+        model.hybridize(static_alloc=True, static_shape=True)
 
     if load_again:
         param_path = os.path.join(ckpt_dir, '%07d.params'%start_step)
-        nlp.utils.load_parameters(model, param_path, ctx=ctx, cast_dtype=True)
+        nlp.utils.load_parameters(model, param_path, ctx=ctx)#, cast_dtype=True)
         logging.info('Loading step %d checkpoints from %s.', start_step, param_path)
     return model, vocabulary
 
@@ -703,7 +706,7 @@ class BERTForPretrain(mx.gluon.Block):
         ls2 = ls2.mean()
         return classified, decoded, ls1, ls2, num_masks
 
-def evaluate(data_eval, model, ctx, args, batch_size_eval): #log_interval, dtype, rank, num_workers, args):
+def evaluate(data_eval, model, ctx, args, batch_size_eval, rank): #log_interval, dtype, rank, num_workers, args):
     """Evaluation function."""
     log_interval = args.log_interval
     dtype = args.dtype
@@ -720,11 +723,10 @@ def evaluate(data_eval, model, ctx, args, batch_size_eval): #log_interval, dtype
     total_mlm_loss = total_nsp_loss = 0
     running_num_tks = 0
 
-    import horovod.mxnet as hvd
     if int(os.environ.get('HD5', False)):
         from th import get_hd5_loader
         logging.info('using HD5 dataset for eval: {}'.format(args.data_eval))
-        data_eval = get_hd5_loader(args.data_eval, hvd.rank(), batch_size_eval, args.max_predictions_per_seq, False)
+        data_eval = get_hd5_loader(args.data_eval, rank, batch_size_eval, args.max_predictions_per_seq, False)
 
     for idx, data_batch in enumerate(data_eval):
         if int(os.environ.get('HD5', False)):

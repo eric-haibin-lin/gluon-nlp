@@ -1,0 +1,27 @@
+BERT:
+  CLUSTER:
+    NP: 8
+    HOST: localhost
+
+  HVD:
+    CYCLE_TIME: 1000
+
+  TRAIN:
+    CKPT_DIR: /data/container-512-512-1-log-no-dp-acc-1-ckpt
+    LOG_INTERVAL: 1
+    OPTIMIZER: lamb2
+
+  PHASE1:
+    DATA: 
+    BS: 512
+    ACC: 1
+  
+  PHASE2:
+    ACC: 8
+    RAND_COPY: 1
+    WORKER_NTHREAD: 1
+
+  ENV:
+    PER_STEP_NORM: 1
+    NO_CUDNN_DROPOUT: 1
+    NO_DROPOUT: 1

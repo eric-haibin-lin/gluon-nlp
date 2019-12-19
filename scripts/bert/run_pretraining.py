@@ -624,7 +624,7 @@ def train(data_train, data_eval, model):
                 dataset_eval = get_pretrain_data_npz(data_eval, batch_size_eval,
                                                      1, False, 1, vocab)
                 # TODO(haibin) replace with local-size
-                evaluate(dataset_eval, model, ctxs, args, batch_size_eval) #args.log_interval, args.dtype, local_rank, 8, args)
+                evaluate(dataset_eval, model, ctxs, args, batch_size_eval, rank) #args.log_interval, args.dtype, local_rank, 8, args)
 
             batch_num += 1
 
@@ -706,7 +706,7 @@ if __name__ == '__main__':
         dataset_eval = get_pretrain_data_npz(data_eval, batch_size_eval,
                                              len(ctxs), shuffle, 1, vocab)
 
-        eval_mlm_loss = evaluate(dataset_eval, model, ctxs, args, batch_size_eval) # args.log_interval, args.dtype, local_rank, 8)
+        eval_mlm_loss = evaluate(dataset_eval, model, ctxs, args, batch_size_eval, rank) # args.log_interval, args.dtype, local_rank, 8)
     mx.nd.waitall()
     if backend == 'horovod':
         hvd.allreduce_(eval_mlm_loss, average=True, name='eval_mlm_loss')

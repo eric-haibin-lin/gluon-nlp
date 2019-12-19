@@ -44,6 +44,129 @@ except Exception as e:
     print(e, 'skipping the import')
 import numpy
 
+@register
+class LAMB8(Optimizer):
+    """LAMB Optimizer.
+    """
+    def __init__(self, learning_rate=0.001, beta1=0.9, beta2=0.999, epsilon=1e-6,
+                 lower_bound=None, upper_bound=None, bias_correction=True, **kwargs):
+        super(LAMB8, self).__init__(learning_rate=learning_rate, **kwargs)
+        self.beta1 = beta1
+        self.beta2 = beta2
+        self.epsilon = epsilon
+        self.lower_bound = lower_bound
+        self.upper_bound = upper_bound
+        self.bias_correction = bias_correction
+        self.aggregate_num = max(1, min(50, int(os.getenv('MXNET_OPTIMIZER_AGGREGATION_SIZE', "50"))))
+
+    def create_state(self, index, weight):
+        stype = weight.stype
+        dtype = weight.dtype
+        return (zeros(weight.shape, weight.context, dtype=dtype, stype=stype),
+                zeros(weight.shape, weight.context, dtype=dtype, stype=stype))
+
+    def _update_impl(self, index, weight, grad, state, multi_precision=False):
+        kwargs = {'beta1': self.beta1, 'beta2': self.beta2, 'epsilon': self.epsilon,
+                  'bias_correction': self.bias_correction,
+                  'rescale_grad': self.rescale_grad}
+
+        if self.aggregate_num <= 1 or not isinstance(index, (tuple, list)):
+            if isinstance(index, (tuple, list)):
+                assert len(index) == 1
+                assert isinstance(weight, (tuple, list)) and len(weight) == 1
+                assert isinstance(grad, (tuple, list)) and len(grad) == 1
+                index, weight, grad, state = index[0], weight[0], grad[0], state[0]
+            assert isinstance(weight, NDArray), type(weight)
+            assert isinstance(grad, NDArray), type(grad)
+            self._update_count(index)
+            lr = self._get_lr(index)
+            wd = self._get_wd(index)
+            t = self._index_update_count[index]
+            kwargs['t'] = t
+            if self.clip_gradient:
+                kwargs['clip_gradient'] = self.clip_gradient
+
+            if multi_precision:
+                assert len(state) == 2, len(state)
+                mean, var = state[1]
+                weight32 = state[0]
+                g = mp_lamb_update_phase1(weight, grad, mean, var, weight32, wd=wd, **kwargs)
+
+                kwargs = {}
+                if self.lower_bound:
+                    kwargs['lower_bound'] = self.lower_bound
+                if self.upper_bound:
+                    kwargs['upper_bound'] = self.upper_bound
+                r_1 = mx.nd.multi_sum_sq(weight32, num_arrays=1).sqrt()
+                r_2 = mx.nd.multi_sum_sq(g, num_arrays=1).sqrt()
+                mp_lamb_update_phase2(weight, g, r_1, r_2, weight32, lr=lr, out=weight, **kwargs)
+            else:
+                mean, var = state
+                g = lamb_update_phase1(weight, grad, mean, var, wd=wd, **kwargs)
+
+                kwargs = {}
+                if self.lower_bound:
+                    kwargs['lower_bound'] = self.lower_bound
+                if self.upper_bound:
+                    kwargs['upper_bound'] = self.upper_bound
+                r_1 = mx.nd.multi_sum_sq(weight, num_arrays=1).sqrt()
+                r_2 = mx.nd.multi_sum_sq(g, num_arrays=1).sqrt()
+                lamb_update_phase2(weight, g, r_1, r_2, lr=lr, out=weight, **kwargs)
+        else:
+            if self.clip_gradient:
+                kwargs['clip_gradient'] = self.clip_gradient
+            if self.lower_bound:
+                kwargs['lower_bound'] = self.lower_bound
+            if self.upper_bound:
+                kwargs['upper_bound'] = self.upper_bound
+
+            step_count = []
+            for i, (w_i, g_i) in enumerate(zip(weight, grad)):
+                assert(isinstance(w_i, NDArray))
+                assert(isinstance(g_i, NDArray))
+                self._update_count(i)
+                step_count.append(self._index_update_count[i])
+            lr = self._get_lr(index[0])
+            wd = self._get_wd(index[0])
+            kwargs['learning_rate'] = lr
+            kwargs['wd'] = wd
+
+            updated_tensors = 0
+            while updated_tensors < len(weight):
+                sidx = updated_tensors
+                eidx = min(updated_tensors + self.aggregate_num, len(weight))
+                if not multi_precision:
+                    mean, var = list(zip(*state[sidx:eidx]))
+                    multi_lamb_update(weight[sidx:eidx],
+                                      grad[sidx:eidx],
+                                      mean, var,
+                                      out=weight[sidx:eidx],
+                                      step_count=step_count[sidx:eidx],
+                                      **kwargs)
+                else:
+                    mean_var = list(zip(*state[sidx:eidx]))[1]
+                    temp = list(zip(*mean_var))
+                    mean = temp[0]
+                    var = temp[1]
+                    multi_mp_lamb_update(weight[sidx:eidx],
+                                         grad[sidx:eidx],
+                                         mean, var,
+                                         list(zip(*state[sidx:eidx]))[0],
+                                         out=weight[sidx:eidx],
+                                         step_count=step_count[sidx:eidx],
+                                         **kwargs)
+                updated_tensors += self.aggregate_num
+
+    def update(self, index, weight, grad, state):
+        self._update_impl(index, weight, grad, state, multi_precision=False)
+
+    def update_multi_precision(self, index, weight, grad, state):
+        if not isinstance(index, (tuple, list)):
+            use_multi_precision = self.multi_precision and weight.dtype == numpy.float16
+        else:
+            use_multi_precision = self.multi_precision and weight[0].dtype == numpy.float16
+        self._update_impl(index, weight, grad, state,
+                          multi_precision=use_multi_precision)
 
 @register
 class LAMB7(Optimizer):

@@ -1,0 +1,19 @@
+BERT:
+  CLUSTER:
+    NP: 512
+    HOST: hosts_64_v2
+
+  TRAIN:
+    CKPT_DIR: /data/container-64k-512-1-log-ckpt
+    LOG_INTERVAL: 1
+
+  PHASE1:
+    ACC: 2
+  
+  PHASE2:
+    ACC: 8
+    RAND_COPY: 1
+    WORKER_NTHREAD: 1
+
+  ENV:
+    PER_STEP_NORM: 1

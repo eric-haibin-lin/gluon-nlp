@@ -1,0 +1,24 @@
+BERT:
+  CLUSTER:
+    NP: 256
+    HOST: hosts_32_v2
+
+  TRAIN:
+    CKPT_DIR: /data/container-64k-256-whole-word-ckpt
+    OPTIMIZER: lamb7
+
+  PHASE1:
+    ACC: 4
+    DATA: /data/datasets/hdf5_lower_case_1_seq_len_128_max_pred_20_masked_lm_prob_0.15_random_seed_12345_dupe_factor_5_whole_word/books_wiki_en_corpus_train/
+    DATA_EVAL: /data/datasets/hdf5_lower_case_1_seq_len_128_max_pred_20_masked_lm_prob_0.15_random_seed_12345_dupe_factor_5_whole_word/books_wiki_en_corpus_test/
+  
+  PHASE2:
+    ACC: 16
+    DATA: /data/datasets/hdf5_lower_case_1_seq_len_512_max_pred_80_masked_lm_prob_0.15_random_seed_12345_dupe_factor_5_whole_word/books_wiki_en_corpus_train/
+    DATA_EVAL: /data/datasets/hdf5_lower_case_1_seq_len_512_max_pred_80_masked_lm_prob_0.15_random_seed_12345_dupe_factor_5_whole_word/books_wiki_en_corpus_test/
+
+  ENV:
+    SLOW_NORM: 0
+    MXNET_OPTIMIZER_AGGREGATION_SIZE: 1
+    PER_STEP_NORM: 0
+    USE_SA: 1

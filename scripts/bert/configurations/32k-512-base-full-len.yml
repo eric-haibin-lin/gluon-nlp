@@ -1,0 +1,28 @@
+BERT:
+  CLUSTER:
+    NP: 512
+    HOST: hosts_64_v2
+
+  TRAIN:
+    CKPT_DIR: /data/container-32k-512-base-full-len-ckpt
+    MODEL: bert_12_768_12
+
+  PHASE1:
+    NUM_STEPS: 15640
+    BS: 32768
+    ACC: 2
+    LR: 0.005
+    WARMUP_RATIO: 0.2
+    DATA: /data/datasets/hdf5_lower_case_1_seq_len_512_max_pred_80_masked_lm_prob_0.15_random_seed_12345_dupe_factor_5_512_shard/books_wiki_en_corpus_train/
+    DATA_EVAL: /data/datasets/hdf5_lower_case_1_seq_len_512_max_pred_80_masked_lm_prob_0.15_random_seed_12345_dupe_factor_5_512_shard/books_wiki_en_corpus_test/
+    OPTIONS: --verbose
+    MAX_SEQ_LENGTH: 512
+    MAX_PREDICTIONS_PER_SEQ: 80
+
+  RUN:
+    PHASE2: 0
+
+  ENV:
+    SLOW_NORM: 0
+    USE_GELU: 1
+    USE_SA: 1

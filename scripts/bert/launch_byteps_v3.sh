@@ -46,7 +46,7 @@ SERVER_ENV="$COMMON_ENV \
 DOCKER="run -v $HOME/.ssh:/root/.ssh -v $HOME/efs/$USERNAME:/efs/$USERNAME -v /fsx:/data --network=host --shm-size=32768m"
 LAUNCHER="/usr/local/byteps/launcher/launch.py"
 SCHED_CMD="$COMMON_ENV export DMLC_ROLE=scheduler; python3 $LAUNCHER"
-SERVER_CMD="$SERVER_ENV export DMLC_ROLE=server; export BYTEPS_SERVER_ENABLE_PROFILE=1; python3 $LAUNCHER"
+SERVER_CMD="$SERVER_ENV export DMLC_ROLE=server; python3 $LAUNCHER"
 
 SCHED_TMUX="tmux new -d \"docker $DOCKER -d $server_docker bash -c '$SCHED_CMD'\""
 

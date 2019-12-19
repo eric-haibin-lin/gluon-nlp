@@ -25,7 +25,7 @@ from mxnet.ndarray import square, power, sqrt, maximum, minimum, clip, where
 __all__ = ['LAMB']
 
 
-@register
+#@register
 class LAMB(Optimizer):
     """The LAMB optimizer proposed in
     `Reducing BERT Pre-Training Time from 3 Days to 76 Minutes <https://arxiv.org/abs/1904.00962>`_.

@@ -19,7 +19,7 @@ set -ex
 export BERT_TRAIN_CKPT_DIR="$BERT_TRAIN_CKPT_DIR/$CONTAINER_REGISTRY"
 printenv | sort | grep BERT
 mkdir -p $BERT_TRAIN_CKPT_DIR
-cp $CONFIG $BERT_TRAIN_CKPT_DIR/
+cp $CONFIG $BERT_TRAIN_CKPT_DIR/ 2>/dev/null || :
 
 # =====================================================================
 # phase 1

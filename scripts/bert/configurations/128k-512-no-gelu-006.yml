@@ -1,0 +1,20 @@
+BERT:
+  CLUSTER:
+    NP: 512
+    HOST: hosts_64_v2
+
+  TRAIN:
+    CKPT_DIR: /data/container-128k-512-no-gelu-006-ckpt
+
+  PHASE1:
+    ACC: 4
+    BS: 131072
+    NUM_STEPS: 3519
+    LR: 0.006
+    WARMUP_RATIO: 0.5683
+  
+  PHASE2:
+    ACC: 8
+
+  ENV:
+    USE_GELU: 0
