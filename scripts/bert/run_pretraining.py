@@ -184,7 +184,7 @@ class DataParallelBERT(nlp.utils.Parallelizable):
                               next_sentence_label, segment_id, valid_length)
             classified, decoded, ls1, ls2, num_masks = out
             ls = ls1 + ls2
-            #ls = ls / args.accumulate
+            ls = ls / args.accumulate
         if self._trainer:
             self._trainer.backward(ls)
         else:
@@ -317,7 +317,7 @@ def train(data_train, data_eval, model):
     else:
         trainer = mx.gluon.Trainer(param_dict, args.optimizer, optim_params,
                                    update_on_kvstore=False)
-    trainer._scale = 1.
+    # trainer._scale = 1.
     fp16_trainer = FP16Trainer(trainer, dynamic_loss_scale=dynamic_loss_scale,
                                loss_scaler_params=loss_scale_param)
 
@@ -454,8 +454,8 @@ def train(data_train, data_eval, model):
                 running_mlm_loss += local_mlm_loss / args.accumulate / num_workers
                 running_nsp_loss += local_nsp_loss / args.accumulate / num_workers
                 # because byteps and horovod implicitly set scale /= num_workers
-                fp16_trainer.step(1., max_norm=1.,
-                                  num_ctxs=len(ctxs) * num_workers * args.accumulate)
+                fp16_trainer.step(1., max_norm=args.accumulate,
+                                  num_ctxs=len(ctxs) * num_workers)
                 local_num_masks, local_mlm_loss, local_nsp_loss = 0, 0, 0
                 if accumulate > 1:
                     param_dict.zero_grad()

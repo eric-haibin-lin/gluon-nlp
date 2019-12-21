@@ -218,16 +218,16 @@ class LAMB2(Optimizer):
         with bulk(self._bulk):
             # preprocess grad
             grad *= self.rescale_grad
-            if not att or not self._split_head:
-                grad /= grad.norm(ord=2)
-            else: 
-                if len(weight.shape) == 2:
-                    grad = grad.reshape((-4, self.num_heads, -1, 0))
-                else:
-                    grad = grad.reshape((-4, self.num_heads, -1))
-                #grad_norm = sqrt(mx.nd.sum(square(grad), axis=0, exclude=True, keepdims=True))
-                grad_norm = mx.nd.sum(mx.nd.abs(grad), axis=0, exclude=True, keepdims=True)
-                grad /= grad_norm
+            # if not att or not self._split_head:
+            #     grad /= grad.norm(ord=2)
+            # else: 
+            #     if len(weight.shape) == 2:
+            #         grad = grad.reshape((-4, self.num_heads, -1, 0))
+            #     else:
+            #         grad = grad.reshape((-4, self.num_heads, -1))
+            #     #grad_norm = sqrt(mx.nd.sum(square(grad), axis=0, exclude=True, keepdims=True))
+            #     grad_norm = mx.nd.sum(mx.nd.abs(grad), axis=0, exclude=True, keepdims=True)
+            #     grad /= grad_norm
             if self.clip_gradient is not None:
                 grad = clip(grad, -self.clip_gradient, self.clip_gradient)
 
@@ -446,10 +446,10 @@ class FP16Trainer:
             max value for global 2-norm of gradients.
         """
         if num_ctxs and num_ctxs > 1:
-            for param in sorted(self.fp32_trainer._params, key=lambda p: p.name):
-                if param.grad_req != 'null':
-                    for grad in param.list_grad():
-                        grad /= num_ctxs
+        #    for param in sorted(self.fp32_trainer._params, key=lambda p: p.name):
+        #        if param.grad_req != 'null':
+        #            for grad in param.list_grad():
+        #                grad /= num_ctxs
         self.fp32_trainer.allreduce_grads()
         step_size = batch_size * self._scaler.loss_scale
         if max_norm is not None:
@@ -520,7 +520,7 @@ class DynamicLossScaler(LossScaler):
     by 2x. On the other hand, if a NaN is not detected for a long time
     (e.g. 2000 steps), then the scale is increased (by default) by 2x."""
     def __init__(self, init_scale=2.**15, scale_factor=2., scale_window=2000,
-                 tolerance=0.):
+                 tolerance=0.01):
         self.loss_scale = init_scale
         self.scale_factor = scale_factor
         self.scale_window = scale_window
