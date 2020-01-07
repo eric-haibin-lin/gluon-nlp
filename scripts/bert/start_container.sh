@@ -12,6 +12,9 @@ set -ex
 
 docker pull $CONTAINER_REGISTRY
 
+sudo rm -rf ~/temp-docker-nlp
+cp -rf $NLP_PATH ~/temp-docker-nlp
+
 nvidia-docker run \
     --shm-size=32g \
     --rm \
@@ -21,7 +24,7 @@ nvidia-docker run \
     --ulimit nofile=8192:8192 \
     --security-opt seccomp=unconfined \
     -v $DATA_PATH:/data \
-    -v $NLP_PATH:/opt/gluon-nlp \
+    -v ~/temp-docker-nlp:/opt/gluon-nlp \
     -v $DATA_PATH:/home/$CLUSTER_USER/mxnet-data \
     -e FI_PROVIDER=\"efa\" \
     --device=/dev/infiniband/uverbs0 \
