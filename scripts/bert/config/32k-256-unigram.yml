@@ -1,0 +1,29 @@
+BERT:
+  CLUSTER:
+    NP: 256
+    HOST: hosts_32
+
+  TRAIN:
+    CKPT_DIR: /data/results/test-ckpt
+    MODEL: bert_12_768_12
+    OPTIMIZER: lamb
+    CKPT_INTERVAL: 25000
+    SENTENCEPIECE: "/data/datasets/ads/sentencepiece_model/asin-unigram-32000-150M.model"
+
+  PHASE1:
+    NUM_STEPS: 351900
+    BS: 32736
+    ACC: 3
+    LR: 0.005
+    WARMUP_RATIO: 0.2
+    DATA: "/data/datasets/ads/BERT_training_impressed_asins_06_11_smaller_unencrypted/train/*,/data/datasets/ads/BERT_training_3_months_snapshot_unencrypted/sampled/train/*,"
+    DATA_EVAL: "/data/datasets/ads/generated/smaller_unigram/dev/*.npz,"
+    OPTIONS: --verbose --raw --eval_use_npz
+    MAX_SEQ_LENGTH: 512
+    MAX_PREDICTIONS_PER_SEQ: 80
+
+  RUN:
+    PHASE2: 0
+
+  ENV:
+    MXNET_OPTIMIZER_AGGREGATION_SIZE: 50

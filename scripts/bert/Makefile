@@ -25,4 +25,4 @@ prepare-nlp: sync-key sync-host
 	clush --hostfile $(HOSTS) "ssh -p$(PORT) -o 'StrictHostKeyChecking=no' -i $(KEY_FILE) $(USER)@localhost 'cd /opt/gluon-nlp && pip3 install . --user'"
 
 run-bert-%:: prepare-nlp
-	ssh -o 'StrictHostKeyChecking=no' -p$(PORT) -i $(KEY_FILE) $(USER)@localhost 'cd $(BERT_DIR) && CONFIG=configurations/$*.yml bash start_pretrain.sh $(CONTAINER_REGISTRY)'
+	ssh -o 'StrictHostKeyChecking=no' -p$(PORT) -i $(KEY_FILE) $(USER)@localhost 'cd $(BERT_DIR) && CONFIG=config/$*.yml bash start_pretrain.sh $(CONTAINER_REGISTRY)'

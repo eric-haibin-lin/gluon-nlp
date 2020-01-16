@@ -1,0 +1,67 @@
+BERT:
+  CLUSTER:
+    NP: 8
+    HOST: localhost
+  
+  TRAIN:
+    DTYPE: float16
+    LOG_INTERVAL: 10
+    HD5_DATA: 1
+    OPTIMIZER: lamb3
+    MODEL: bert_24_1024_16
+    CKPT_DIR: /data/default-ckpt
+    CKPT_INTERVAL: 5000
+  
+  HVD:
+    CYCLE_TIME: 85
+    HIERARCHICAL: 0
+
+  NCCL:
+    MIN_NUM_RINGS: 1
+  
+  RUN:
+    PHASE1: 1
+    PHASE2: 1
+
+  PHASE1:
+    DATA: /data/datasets/hdf5_lower_case_1_seq_len_128_max_pred_20_masked_lm_prob_0.15_random_seed_12345_dupe_factor_5_512_shard/books_wiki_en_corpus_train/
+    DATA_EVAL: /data/datasets/hdf5_lower_case_1_seq_len_128_max_pred_20_masked_lm_prob_0.15_random_seed_12345_dupe_factor_5_512_shard/books_wiki_en_corpus_test/
+    OPTIONS: --verbose
+    NUM_STEPS: 7038
+    BS: 65536
+    ACC: 256
+    MAX_SEQ_LENGTH: 128
+    MAX_PREDICTIONS_PER_SEQ: 20
+    LR: 0.006
+    WARMUP_RATIO: 0.2843
+  
+  PHASE2:
+    DATA: /data/datasets/hdf5_lower_case_1_seq_len_512_max_pred_80_masked_lm_prob_0.15_random_seed_12345_dupe_factor_5_512_shard/books_wiki_en_corpus_train/
+    DATA_EVAL: /data/datasets/hdf5_lower_case_1_seq_len_512_max_pred_80_masked_lm_prob_0.15_random_seed_12345_dupe_factor_5_512_shard/books_wiki_en_corpus_test/
+    OPTIONS: --verbose
+    NUM_STEPS: 1564
+    BS: 32768
+    ACC: 1024
+    MAX_SEQ_LENGTH: 512
+    MAX_PREDICTIONS_PER_SEQ: 80
+    LR: 0.004
+    WARMUP_RATIO: 0.2
+
+  ENV:
+    RAND_COPY: 4
+    WORKER_NTHREAD: 2
+    NO_DROPOUT: 0
+    NO_CUDNN_DROPOUT: 0
+    TRUNCATE_NORM: 0
+    SHARE_SEED: 0
+    FP32_LN: 0
+    FP32_SM: 0
+    PT_DECAY: 1
+    SKIP_STATE_LOADING: 1
+    USE_FUSION: 0
+    USE_GELU: 1
+    SM_LENGTH: 0
+    USE_SA: 0
+    MANUAL_ACC: 0
+    USE_AMP: 0
+    SLOW_NORM: 1

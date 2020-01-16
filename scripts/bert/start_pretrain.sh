@@ -6,10 +6,10 @@
 # =====================================================================
 source parse_yaml.sh
 export CONTAINER_REGISTRY=$1
-export CONFIG="${CONFIG:-configurations/default.yml}"
+export CONFIG="${CONFIG:-config/default.yml}"
 export BACKEND="${BACKEND:-horovod}"
 
-PARSED_DEFAULT=$(parse_yaml configurations/default.yml)
+PARSED_DEFAULT=$(parse_yaml config/default.yml)
 PARSED_NEW=$(parse_yaml $CONFIG)
 eval $PARSED_DEFAULT
 eval $PARSED_NEW

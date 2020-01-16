@@ -1,5 +1,7 @@
 #!/bin/bash
 
+pip3 install packaging --user
+
 case "${OMPI_COMM_WORLD_LOCAL_RANK}" in
 0)
     export OMPI_MCA_btl_openib_if_include=mlx5_0
