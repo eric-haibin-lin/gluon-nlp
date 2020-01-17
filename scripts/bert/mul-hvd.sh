@@ -1,4 +1,4 @@
-pkill python
+pkill python3
 
 mpirun -np $BERT_CLUSTER_NP --hostfile $BERT_CLUSTER_HOST -display-allocation --allow-run-as-root \
 	    -mca pml ob1 -mca btl ^openib -mca btl_tcp_if_exclude docker0,lo \
