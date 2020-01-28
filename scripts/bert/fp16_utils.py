@@ -21,6 +21,7 @@ import collections
 import mxnet as mx
 from mxnet import nd
 from collections import defaultdict
+import os
 
 def grad_global_norm(parameters, max_norm):
     """Calculate the 2-norm of gradients of parameters, and how much they should be scaled down
@@ -120,6 +121,35 @@ class FP16Trainer:
         # if the optimizer supports NaN check, we can always defer the NaN check to the optimizer
         # TODO(haibin) this should be added via registry
         self._support_nan_check = trainer._optimizer.__class__.__name__ == 'BERTAdam'
+        if int(os.environ.get('BERT_ENV_NORMALIZE', '0')):
+            print('BERT_ENV_NORMALIZE=1')
+            f = mx.nd.lamb_update_phase1
+            mp_f = mx.nd.mp_lamb_update_phase1
+            def lamb_update_phase1(weight=None, grad=None, mean=None,
+                                   var=None, beta1=None, beta2=None,
+                                   epsilon=None, t=None, bias_correction=None,
+                                   wd=None, rescale_grad=None,
+                                   clip_gradient=None, out=None,
+                                   name=None, **kwargs):
+                grad *= rescale_grad
+                grad /= grad.norm()
+                return f(weight=weight, grad=grad, mean=mean, var=var, beta1=beta1, beta2=beta2, epsilon=epsilon,
+                         t=t, bias_correction=bias_correction, wd=wd, rescale_grad=1.0,
+                         clip_gradient=clip_gradient, out=out, name=name, **kwargs)
+            def mp_lamb_update_phase1(weight=None, grad=None, mean=None,
+                                      var=None, weight32=None, beta1=None, beta2=None,
+                                      epsilon=None, t=None, bias_correction=None,
+                                      wd=None, rescale_grad=None,
+                                      clip_gradient=None, out=None,
+                                      name=None, **kwargs):
+                grad *= rescale_grad
+                grad /= grad.norm()
+                return mp_f(weight=weight, grad=grad, mean=mean, var=var, weight32=weight32,
+                            beta1=beta1, beta2=beta2, epsilon=epsilon,
+                            t=t, bias_correction=bias_correction, wd=wd, rescale_grad=1.0,
+                            clip_gradient=clip_gradient, out=out, name=name, **kwargs)
+            mx.nd.lamb_update_phase1 = lamb_update_phase1
+            mx.nd.mp_lamb_update_phase1 = mp_lamb_update_phase1
 
     def backward(self, loss):
         """backward propagation with loss"""
@@ -142,18 +172,34 @@ class FP16Trainer:
         max_norm : NDArray, optional, default is None
             max value for global 2-norm of gradients.
         """
+        if int(os.environ.get('BERT_ENV_LOCAL_NORM', '0')):
+            # local normalization
+            import horovod.mxnet as hvd
+            for p in self.fp32_trainer._params:
+                if p.grad_req != 'null':
+                    p_grads = p.list_grad()
+                    for g in p_grads:
+                        g /= hvd.size()
+
         self.fp32_trainer.allreduce_grads()
         step_size = batch_size * self._scaler.loss_scale
+        if int(os.environ.get('BERT_ENV_LOCAL_NORM', '0')):
+            step_size /= hvd.size()
+            max_norm /= hvd.size()
         if max_norm:
             _, ratio, is_finite = grad_global_norm(self.fp32_trainer._params,
                                                    max_norm * self._scaler.loss_scale)
-            step_size = ratio * step_size
+            if int(os.environ.get('BERT_ENV_NORMALIZE', '0')):
+                pass
+            else:
+                step_size = ratio * step_size
             if self._support_nan_check:
                 self.fp32_trainer.update(step_size)
                 overflow = is_finite.asscalar() < 1
             else:
                 overflow = is_finite.asscalar() < 1
                 if not overflow:
+                    step_size = step_size.asscalar() if isinstance(step_size, mx.ndarray.ndarray.NDArray) else step_size
                     self.fp32_trainer.update(step_size)
         else:
             # TODO(haibin) optimize the performance when max_norm is not present

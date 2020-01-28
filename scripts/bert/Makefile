@@ -1,7 +1,7 @@
-export USER="cluster"
+export USER=cluster
 export CONTAINER_NAME="mxnet-docker"
 export CONTAINER_REGISTRY="haibinlin/bert-docker:download-lamb"
-export NLP_PATH="/home/ec2-user/efs/ads/ads/"
+export NLP_PATH=/home/ec2-user/efs/ads/bench_v2/
 export KEY_FILE="$(NLP_PATH)/../ssh_cluster_key.pem"
 export DATA_PATH="/fsx"
 export PORT=2022

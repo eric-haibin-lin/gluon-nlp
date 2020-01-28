@@ -14,6 +14,7 @@ docker pull $CONTAINER_REGISTRY
 
 sudo rm -rf ~/temp-docker-nlp
 cp -rf $NLP_PATH ~/temp-docker-nlp
+chmod 777 ~/temp-docker-nlp
 
 nvidia-docker run \
     --shm-size=32g \

@@ -130,13 +130,13 @@ parser.add_argument('--whole_word_mask', action='store_true',
 parser.add_argument('--sentencepiece', default=None, type=str,
                     help='Path to the sentencepiece .model file for both tokenization and vocab. '
                          'Effective only if --raw is set.')
-parser.add_argument('--num_dataset_workers', type=int, default=4,
+parser.add_argument('--num_dataset_workers', type=int, default=8,
                     help='Number of workers to pre-process dataset.')
 parser.add_argument('--num_batch_workers', type=int, default=4,
                     help='Number of workers to pre-process mini-batch.')
 parser.add_argument('--circle_length', type=int, default=1,
                     help='Number of files to be read for a single GPU at the same time.')
-parser.add_argument('--repeat', type=int, default=8,
+parser.add_argument('--repeat', type=int, default=40,
                     help='Number of times that files are repeated in each shuffle.')
 parser.add_argument('--dataset_cached', action='store_true',
                     help='Whether or not to cache the last processed training dataset.')
@@ -149,6 +149,9 @@ parser.add_argument('--comm_backend', type=str, default='device',
 parser.add_argument('--gpus', type=str, default=None,
                     help='List of gpus to run when device or dist_sync_device is used for '
                          'communication, e.g. 0 or 0,2,5. empty means using cpu.')
+parser.add_argument('--phase2', action='store_true', help='phase 2 training')
+parser.add_argument('--phase1_num_steps', type=int, help='number of steps for phase 1')
+
 args = parser.parse_args()
 
 # logging
@@ -201,7 +204,7 @@ def init_comm(backend):
             logging.info('horovod must be installed.')
             sys.exit(1)
         hvd.init()
-        store = None
+        store = hvd
         num_workers = hvd.size()
         rank = hvd.rank()
         local_rank = hvd.local_rank()
@@ -239,7 +242,7 @@ def train(data_train, data_eval, model):
     mlm_metric.reset()
     nsp_metric.reset()
 
-    logging.debug('Creating distributed trainer...')
+    logging.info('Creating distributed trainer...')
     lr = args.lr
     optim_params = {'learning_rate': lr, 'epsilon': 1e-6, 'wd': 0.01}
     if args.dtype == 'float16':
@@ -284,8 +287,10 @@ def train(data_train, data_eval, model):
     running_num_tks = 0
     batch_num = 0
     step_num = args.start_step
+    if args.phase2:
+        step_num -= args.phase1_num_steps
 
-    logging.debug('Training started')
+    logging.info('Training started')
 
     # create dummy data loader if needed
     parallel_model = DataParallelBERT(model, trainer=fp16_trainer)
@@ -374,11 +379,12 @@ def train(data_train, data_eval, model):
                     save_states(step_num, trainer, args.ckpt_dir, local_rank)
                     if local_rank == 0:
                         save_parameters(step_num, model.bert, args.ckpt_dir)
-                if (step_num + 1) % args.eval_interval == 0 and data_eval:
-                    # eval data is always based on a fixed npz file.
-                    dataset_eval = get_pretrain_data_npz(data_eval, batch_size_eval,
-                                                         1, False, 1, vocab)
-                    evaluate(dataset_eval, model, ctxs, args.log_interval, args.dtype)
+            if (step_num + 1) % args.eval_interval == 0 and data_eval:
+                # eval data is always based on a fixed npz file.
+                dataset_eval = get_pretrain_data_npz(data_eval, batch_size_eval,
+                                                     1, False, 1, vocab,
+                                                     num_parts=num_workers, part_idx=rank)
+                evaluate(dataset_eval, model, ctxs, args.log_interval, args.dtype, store)
 
             batch_num += 1
 
@@ -407,7 +413,7 @@ if __name__ == '__main__':
                                   dataset_name, vocab, args.dtype,
                                   ckpt_dir=args.ckpt_dir,
                                   start_step=args.start_step)
-    logging.debug('Model created')
+    logging.info('Model created')
     data_eval = args.data_eval
 
     if args.raw:
@@ -427,7 +433,7 @@ if __name__ == '__main__':
             if not os.path.isfile(cache_file) and rank == 0:
                 generate_dev_set(tokenizer, vocab, cache_file, args)
 
-    logging.debug('Random seed set to %d', random_seed)
+    logging.info('Random seed set to %d', random_seed)
     mx.random.seed(random_seed)
 
     if args.data:
@@ -461,5 +467,6 @@ if __name__ == '__main__':
         # eval data is always based on a fixed npz file.
         shuffle = False
         dataset_eval = get_pretrain_data_npz(data_eval, batch_size_eval,
-                                             len(ctxs), shuffle, 1, vocab)
-        evaluate(dataset_eval, model, ctxs, args.log_interval, args.dtype)
+                                             len(ctxs), shuffle, 1, vocab,
+                                             num_parts=num_workers, part_idx=rank)
+        evaluate(dataset_eval, model, ctxs, args.log_interval, args.dtype, store)

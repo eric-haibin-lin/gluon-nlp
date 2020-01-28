@@ -1,6 +1,6 @@
 #!/bin/bash
 
-pip3 install packaging --user
+pip3 install sentencepiece --user
 
 case "${OMPI_COMM_WORLD_LOCAL_RANK}" in
 0)

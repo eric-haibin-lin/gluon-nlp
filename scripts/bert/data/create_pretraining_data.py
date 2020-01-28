@@ -224,7 +224,7 @@ def create_training_instances(x):
     all_documents = [[]]
 
     for input_file in input_files:
-        logging.debug('*** Tokenizing file %s***', input_file)
+        logging.info('*** Tokenizing file %s***', input_file)
         with io.open(input_file, 'r', encoding='utf-8') as reader:
             lines = reader.readlines()
             num_lines = len(lines)
