@@ -182,8 +182,10 @@ parser.add_argument(
 
 args = parser.parse_args()
 
+
 log = logging.getLogger()
 log.setLevel(logging.INFO)
+
 logging.captureWarnings(True)
 fh = logging.FileHandler('log_{0}.txt'.format(args.task_name))
 formatter = logging.Formatter(fmt='%(levelname)s:%(name)s:%(asctime)s %(message)s',
