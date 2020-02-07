@@ -9,13 +9,16 @@ Install MXNet nightly cuxx variant from https://repo.mxnet.io/dist/index.html:
 # Assuming cuda 10.0 below
 pip3 install https://repo.mxnet.io/dist/mxnet_cu100-1.6.0-py2.py3-none-manylinux1_x86_64.whl  --user
 ```
-Install Numpy 1.16:
+Install Numpy 1.14:
 ```
-pip3 install numpy==1.16 --user
+pip3 install numpy==1.14 --user
 ```
 
 ## Embedding Inference
+Command:
+```
 python3 embedding.py --gpu 0 --params_path 0300000.params.bert --sentencepiece asin-unigram-32000-150M.model --file sample_text.txt
+```
 Result samples:
 ```
 Text: ▁this ▁text ▁is ▁included ▁to ▁make ▁sure ▁uni code ▁is ▁handled ▁properly ▁ : ▁ 力 ▁ 加 ▁ 勝 ▁ 北 ▁ 区 ▁ I N T a ছ জ ট ড ণ ত
