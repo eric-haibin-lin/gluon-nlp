@@ -3,7 +3,6 @@ import argparse
 import numpy as np
 import mxnet as mx
 import gluonnlp as nlp
-from gluonnlp.model import BERTClassifier
 
 parser = argparse.ArgumentParser(description='BERT pretraining example.')
 parser.add_argument('--gpu', action='store_true', help='use GPU context')
@@ -22,7 +21,25 @@ get_model_params = {
     'use_decoder': False,
     'use_classifier': False,
 }
- 
+
+class BERTClassifier(mx.gluon.HybridBlock):
+    def __init__(self, bert, num_classes=2, dropout=0.0,
+                 prefix=None, params=None):
+        super(BERTClassifier, self).__init__(prefix=prefix, params=params)
+        self.bert = bert
+        with self.name_scope():
+            self.classifier = mx.gluon.nn.HybridSequential(prefix=prefix)
+            if dropout:
+                self.classifier.add(mx.gluon.nn.Dropout(rate=dropout))
+            self.classifier.add(mx.gluon.nn.Dense(units=num_classes))
+
+    def __call__(self, inputs, token_types, valid_length=None):
+        return super(BERTClassifier, self).__call__(inputs, token_types, valid_length)
+
+    def hybrid_forward(self, F, inputs, token_types, valid_length=None):
+        _, pooler_out = self.bert(inputs, token_types, valid_length)
+        return self.classifier(pooler_out)
+
 bert, vocabulary = nlp.model.get_model(**get_model_params)
 mx_model = BERTClassifier(bert, dropout=0.1, num_classes=num_classes)
 mx_model.initialize(ctx=mx_ctx)
