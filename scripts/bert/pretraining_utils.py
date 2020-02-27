@@ -137,7 +137,7 @@ def prepare_pretrain_bucket_sampler(dataset, batch_size, shuffle=False,
                                           num_buckets=num_buckets,
                                           ratio=0,
                                           shuffle=shuffle)
-    logging.debug('Sampler created for a new dataset:\n%s', sampler.stats())
+    # logging.debug('Sampler created for a new dataset:\n%s', sampler.stats())
     return sampler
 
 

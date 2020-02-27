@@ -144,6 +144,8 @@ parser.add_argument('--num_max_dataset_cached', type=int, default=0,
                     help='Maximum number of cached processed training dataset.')
 # stage 2
 parser.add_argument('--phase2', action='store_true', help='phase 2 training')
+parser.add_argument('--skip_state_loading', action='store_true',
+                    help='skip loading trainer state for phase 2 training')
 parser.add_argument('--phase1_num_steps', type=int, help='number of steps for phase 1')
 # communication
 parser.add_argument('--comm_backend', type=str, default='device',
@@ -270,7 +272,7 @@ def train(data_train, data_eval, model):
     fp16_trainer = FP16Trainer(trainer, dynamic_loss_scale=dynamic_loss_scale,
                                loss_scaler_params=loss_scale_param)
 
-    if args.start_step:
+    if args.start_step and not args.skip_state_loading:
         state_path = os.path.join(args.ckpt_dir, '%07d.states.%02d'%(args.start_step, local_rank))
         logging.info('Loading trainer state from %s', state_path)
         nlp.utils.load_states(trainer, state_path)

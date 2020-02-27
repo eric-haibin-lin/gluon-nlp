@@ -82,12 +82,12 @@ def transform(instance, max_seq_length):
     return features
 
 def print_example(instance, features):
-    logging.debug('*** Example Instance ***')
-    logging.debug('\n%s', instance)
+    #logging.debug('*** Example Instance ***')
+    #logging.debug('\n%s', instance)
 
     for feature_name in features.keys():
         feature = features[feature_name]
-        logging.debug('Generated %s: %s', feature_name, feature)
+        #logging.debug('Generated %s: %s', feature_name, feature)
 
 def write_to_files_np(features, tokenizer, max_seq_length,
                       max_predictions_per_seq, output_files):
@@ -224,7 +224,7 @@ def create_training_instances(x):
     all_documents = [[]]
 
     for input_file in input_files:
-        logging.debug('*** Tokenizing file %s***', input_file)
+        #logging.debug('*** Tokenizing file %s***', input_file)
         with io.open(input_file, 'r', encoding='utf-8') as reader:
             lines = reader.readlines()
             num_lines = len(lines)
@@ -285,7 +285,7 @@ def create_training_instances(x):
     if output_file:
         features = (input_ids, segment_ids, masked_lm_positions, masked_lm_ids,
                     masked_lm_weights, next_sentence_labels, valid_lengths)
-        logging.debug('*** Writing to output file %s ***', output_file)
+        #logging.debug('*** Writing to output file %s ***', output_file)
         write_to_files_np(features, tokenizer, max_seq_length,
                           max_predictions_per_seq, [output_file])
         features = None
@@ -293,7 +293,7 @@ def create_training_instances(x):
         features = (input_ids, masked_lm_ids, masked_lm_positions, masked_lm_weights,
                     next_sentence_labels, segment_ids, valid_lengths)
     time_end = time.time()
-    logging.debug('Process %d files took %.1f s', len(input_files), time_end - time_start)
+    # logging.debug('Process %d files took %.1f s', len(input_files), time_end - time_start)
     return features
 
 def create_instances_from_document(x):
