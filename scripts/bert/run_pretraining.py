@@ -134,7 +134,7 @@ parser.add_argument('--num_dataset_workers', type=int, default=4,
                     help='Number of workers to pre-process dataset.')
 parser.add_argument('--num_batch_workers', type=int, default=2,
                     help='Number of workers to pre-process mini-batch.')
-parser.add_argument('--circle_length', type=int, default=2,
+parser.add_argument('--circle_length', type=int, default=4,
                     help='Number of files to be read for a single GPU at the same time.')
 parser.add_argument('--repeat', type=int, default=8,
                     help='Number of times that files are repeated in each shuffle.')

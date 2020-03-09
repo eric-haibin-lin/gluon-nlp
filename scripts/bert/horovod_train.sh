@@ -40,5 +40,5 @@ mpirun -np $BERT_CLUSTER_NP --hostfile $BERT_CLUSTER_HOST.mpi -display-allocatio
 	--max_seq_length $BERT_PHASE2_MAX_SEQ_LENGTH \
 	--max_predictions_per_seq $BERT_PHASE2_MAX_PREDICTIONS_PER_SEQ \
         --eval_interval $BERT_TRAIN_EVAL_INTERVAL \
-	--no_compute_acc --phase2 --phase1_num_steps 14076 \
+	--no_compute_acc \
 	--comm_backend horovod --log_interval $BERT_TRAIN_LOG_INTERVAL $BERT_PHASE2_OPTIONS 2>&1 | tee -a ~/stdout.log
