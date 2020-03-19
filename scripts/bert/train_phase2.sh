@@ -1,5 +1,5 @@
 source parse_yaml.sh
-CONFIG=$(parse_yaml phase2.config)
+CONFIG=$(parse_yaml phase1-256.config)
 set -ex
 eval $CONFIG
 
