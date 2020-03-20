@@ -89,7 +89,7 @@ RUN pip3 list | grep gluon
 
 # Copy benchmarking scripts
 # COPY benchmarks/* /opt/benchmarks/
-# WORKDIR /opt/benchmarks
+WORKDIR /opt/benchmarks
 
 # Set environment variables so nvidia-docker will expose GPUs
 ENV NVIDIA_VISIBLE_DEVICES all
@@ -98,6 +98,7 @@ ENV NVIDIA_REQUIRE_CUDA "cuda>=10.0 brand=tesla,driver>=418,driver<419 brand=tes
 ENV PATH /usr/local/cuda/bin:/opt/amazon/openmpi/bin:$PATH
 
 COPY container_entrypoint.sh /etc/
+RUN chmod 777 /etc/container_entrypoint.sh
 ENTRYPOINT /etc/container_entrypoint.sh
 
 EXPOSE 2022

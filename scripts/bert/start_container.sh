@@ -18,6 +18,7 @@ nvidia-docker run \
     --ulimit nofile=8192:8192 \
     --security-opt seccomp=unconfined \
     -v $CONTAINER_SHARED_FS:/data \
-    --detach \
     -e NVIDIA_VISIBLE_DEVICES=all \
+    --privileged \
+    --detach \
     $CONTAINER_REGISTRY
