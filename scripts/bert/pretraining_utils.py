@@ -277,9 +277,10 @@ def get_pretrain_data_npz(data, batch_size, num_ctxes,
     """
     num_files = len(nlp.utils.glob(data))
     logging.info('%d files are found.', num_files)
-    assert num_files >= num_parts, \
-        'The number of text files must be no less than the number of ' \
-        'workers/partitions (%d). Only %d files at %s are found.'%(num_parts, num_files, data)
+    # Not enough files
+    assert num_files > 0, 'No files at {} are found.'.format(data)
+    if num_files < part_idx + 1:
+        return None
     dataset_params = {'allow_pickle': True}
     sampler_params = {'batch_size': batch_size, 'shuffle': shuffle,
                       'num_ctxes': num_ctxes, 'num_buckets': num_buckets}
@@ -421,58 +422,65 @@ class BERTForPretrain(mx.gluon.Block):
         ls2 = ls2.mean()
         return classified, decoded, ls1, ls2
 
-
-def evaluate(data_eval, model, ctx, log_interval, dtype):
+def evaluate(data_eval, model, ctx, log_interval, dtype, comm_backend):
     """Evaluation function."""
     logging.info('Running evaluation ... ')
     mlm_metric = nlp.metric.MaskedAccuracy()
     nsp_metric = nlp.metric.MaskedAccuracy()
     mlm_metric.reset()
     nsp_metric.reset()
+    log_interval = log_interval * 1000
 
     eval_begin_time = time.time()
     begin_time = time.time()
-    step_num = 0
+    step_num = 1
     running_mlm_loss = running_nsp_loss = 0
-    total_mlm_loss = total_nsp_loss = 0
+    total_mlm_loss = mx.nd.array([0])
+    total_nsp_loss = mx.nd.array([0])
     running_num_tks = 0
-    for _, data_batch in enumerate(data_eval):
-        step_num += 1
+    if data_eval is not None:
+        for _, data_batch in enumerate(data_eval):
+            data_list = split_and_load(data_batch, ctx)
+            ns_label_list, ns_pred_list = [], []
+            mask_label_list, mask_pred_list, mask_weight_list = [], [], []
+            for data in data_list:
+                (input_id, masked_id, masked_position, masked_weight, \
+                 next_sentence_label, segment_id, valid_length) = data
+                valid_length = valid_length.astype(dtype, copy=False)
+                out = model(input_id, masked_id, masked_position, masked_weight, \
+                            next_sentence_label, segment_id, valid_length)
+                classified, decoded, ls1, ls2 = out
+                masked_id = masked_id.reshape(-1)
+                ns_label_list.append(next_sentence_label)
+                ns_pred_list.append(classified)
+                mask_label_list.append(masked_id)
+                mask_pred_list.append(decoded)
+                mask_weight_list.append(masked_weight)
 
-        data_list = split_and_load(data_batch, ctx)
-        ns_label_list, ns_pred_list = [], []
-        mask_label_list, mask_pred_list, mask_weight_list = [], [], []
-        for data in data_list:
-            (input_id, masked_id, masked_position, masked_weight, \
-             next_sentence_label, segment_id, valid_length) = data
-            valid_length = valid_length.astype(dtype, copy=False)
-            out = model(input_id, masked_id, masked_position, masked_weight, \
-                        next_sentence_label, segment_id, valid_length)
-            classified, decoded, ls1, ls2 = out
-            masked_id = masked_id.reshape(-1)
-            ns_label_list.append(next_sentence_label)
-            ns_pred_list.append(classified)
-            mask_label_list.append(masked_id)
-            mask_pred_list.append(decoded)
-            mask_weight_list.append(masked_weight)
+                valid_length = valid_length.astype('float32', copy=False)
+                running_mlm_loss += ls1.as_in_context(mx.cpu())
+                running_nsp_loss += ls2.as_in_context(mx.cpu())
+                running_num_tks += valid_length.sum().as_in_context(mx.cpu())
+            nsp_metric.update(ns_label_list, ns_pred_list)
+            mlm_metric.update(mask_label_list, mask_pred_list, mask_weight_list)
 
-            valid_length = valid_length.astype('float32', copy=False)
-            running_mlm_loss += ls1.as_in_context(mx.cpu())
-            running_nsp_loss += ls2.as_in_context(mx.cpu())
-            running_num_tks += valid_length.sum().as_in_context(mx.cpu())
-        nsp_metric.update(ns_label_list, ns_pred_list)
-        mlm_metric.update(mask_label_list, mask_pred_list, mask_weight_list)
+            # logging
+            if (step_num + 1) % (log_interval) == 0:
+                total_mlm_loss += running_mlm_loss
+                total_nsp_loss += running_nsp_loss
+                log(begin_time, running_num_tks, running_mlm_loss, running_nsp_loss,
+                    step_num, mlm_metric, nsp_metric, None, log_interval)
+                begin_time = time.time()
+                running_mlm_loss = mx.nd.array([0])
+                running_nsp_loss = mx.nd.array([0])
+                running_num_tks = 0
+                mlm_metric.reset_local()
+                nsp_metric.reset_local()
 
-        # logging
-        if (step_num + 1) % (log_interval) == 0:
-            total_mlm_loss += running_mlm_loss
-            total_nsp_loss += running_nsp_loss
-            log(begin_time, running_num_tks, running_mlm_loss, running_nsp_loss,
-                step_num, mlm_metric, nsp_metric, None, log_interval)
-            begin_time = time.time()
-            running_mlm_loss = running_nsp_loss = running_num_tks = 0
-            mlm_metric.reset_local()
-            nsp_metric.reset_local()
+            if step_num == 1000:
+                print('evaluating on 1000 sampled eval data')
+                break
+            step_num += 1
 
     mx.nd.waitall()
     eval_end_time = time.time()
@@ -482,10 +490,36 @@ def evaluate(data_eval, model, ctx, log_interval, dtype):
         total_nsp_loss += running_nsp_loss
     total_mlm_loss /= step_num
     total_nsp_loss /= step_num
+
+    num_valid_partitions = mx.nd.array([0 if data_eval is None else 1], ctx=ctx[0])
+    total_mlm_loss = mx.nd.array(total_mlm_loss, ctx=ctx[0])
+    total_nsp_loss = mx.nd.array(total_nsp_loss, ctx=ctx[0])
+    total_mlm_acc = mx.nd.array([mlm_metric.get_global()[1]], ctx=ctx[0])
+    total_nsp_acc = mx.nd.array([nsp_metric.get_global()[1]], ctx=ctx[0])
+
+    def allreduce(comm_backend, name, arr):
+        if isinstance(comm_backend, mx.kv.KVStore):
+            comm_backend.init(name, arr)
+            comm_backend.pushpull(name, arr, out=arr)
+        else:
+            comm_backend.allreduce_(arr, average=False, name=str(name))
+
+    allreduce(comm_backend, 999999, num_valid_partitions)
+    allreduce(comm_backend, 999998, total_mlm_loss)
+    allreduce(comm_backend, 999997, total_nsp_loss)
+    allreduce(comm_backend, 999996, total_mlm_acc)
+    allreduce(comm_backend, 999995, total_nsp_acc)
+
+    total_mlm_loss /= num_valid_partitions
+    total_nsp_loss /= num_valid_partitions
+    total_mlm_acc /= num_valid_partitions
+    total_nsp_acc /= num_valid_partitions
+
     logging.info('Eval mlm_loss={:.3f}\tmlm_acc={:.1f}\tnsp_loss={:.3f}\tnsp_acc={:.1f}\t'
-                 .format(total_mlm_loss.asscalar(), mlm_metric.get_global()[1] * 100,
-                         total_nsp_loss.asscalar(), nsp_metric.get_global()[1] * 100))
+                 .format(total_mlm_loss.asscalar(), total_mlm_acc.asscalar() * 100,
+                         total_nsp_loss.asscalar(), total_nsp_acc.asscalar() * 100))
     logging.info('Eval cost={:.1f}s'.format(eval_end_time - eval_begin_time))
+
 
 
 def generate_dev_set(tokenizer, vocab, cache_file, args):

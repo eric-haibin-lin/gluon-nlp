@@ -50,6 +50,10 @@ from pretraining_utils import split_and_load, log, log_noacc, evaluate
 from pretraining_utils import save_parameters, save_states, profile
 from pretraining_utils import get_pretrain_data_text, generate_dev_set
 
+# XXX: hot-fix for attention cell
+from patches import DotProductSelfAttentionCell
+nlp.model.attention_cell.DotProductSelfAttentionCell = DotProductSelfAttentionCell
+
 # parser
 parser = argparse.ArgumentParser(description='BERT pretraining example.')
 # logging and serialization
@@ -130,13 +134,13 @@ parser.add_argument('--whole_word_mask', action='store_true',
 parser.add_argument('--sentencepiece', default=None, type=str,
                     help='Path to the sentencepiece .model file for both tokenization and vocab. '
                          'Effective only if --raw is set.')
-parser.add_argument('--num_dataset_workers', type=int, default=4,
+parser.add_argument('--num_dataset_workers', type=int, default=8,
                     help='Number of workers to pre-process dataset.')
 parser.add_argument('--num_batch_workers', type=int, default=2,
                     help='Number of workers to pre-process mini-batch.')
 parser.add_argument('--circle_length', type=int, default=4,
                     help='Number of files to be read for a single GPU at the same time.')
-parser.add_argument('--repeat', type=int, default=8,
+parser.add_argument('--repeat', type=int, default=40,
                     help='Number of times that files are repeated in each shuffle.')
 parser.add_argument('--dataset_cached', action='store_true',
                     help='Whether or not to cache the last processed training dataset.')
@@ -391,8 +395,9 @@ def train(data_train, data_eval, model):
                     and (batch_num + 1) % accumulate == 0:
                 # eval data is always based on a fixed npz file.
                 dataset_eval = get_pretrain_data_npz(data_eval, batch_size_eval,
-                                                     1, False, 1, vocab)
-                evaluate(dataset_eval, model, ctxs, args.log_interval, args.dtype)
+                                                     1, False, 1, vocab,
+                                                     num_parts=num_workers, part_idx=rank)
+                evaluate(dataset_eval, model, ctxs, args.log_interval, args.dtype, step_num)
 
             batch_num += 1
 
@@ -478,4 +483,4 @@ if __name__ == '__main__':
         shuffle = False
         dataset_eval = get_pretrain_data_npz(data_eval, batch_size_eval,
                                              len(ctxs), shuffle, 1, vocab)
-        evaluate(dataset_eval, model, ctxs, args.log_interval, args.dtype)
+        evaluate(dataset_eval, model, ctxs, args.log_interval, args.dtype, -1)
