@@ -397,7 +397,7 @@ def train(data_train, data_eval, model):
                 dataset_eval = get_pretrain_data_npz(data_eval, batch_size_eval,
                                                      1, False, 1, vocab,
                                                      num_parts=num_workers, part_idx=rank)
-                evaluate(dataset_eval, model, ctxs, args.log_interval, args.dtype, step_num)
+                evaluate(dataset_eval, model, ctxs, args.log_interval, args.dtype, step_num, hvd)
 
             batch_num += 1
 
@@ -483,4 +483,4 @@ if __name__ == '__main__':
         shuffle = False
         dataset_eval = get_pretrain_data_npz(data_eval, batch_size_eval,
                                              len(ctxs), shuffle, 1, vocab)
-        evaluate(dataset_eval, model, ctxs, args.log_interval, args.dtype, -1)
+        evaluate(dataset_eval, model, ctxs, args.log_interval, args.dtype, -1, hvd)

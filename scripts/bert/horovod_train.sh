@@ -3,14 +3,14 @@ CONFIG=$(parse_yaml phase1-256.config)
 set -ex
 eval $CONFIG
 
-#horovodrun --mpi-args="-x NCCL_DEBUG=info" --log-level DEBUG --verbose -np 16 -H 172.31.12.211:8,172.31.7.89:8 -p 2022 python3 hvd_test.py
-#python3 hvd_test.py
-#exit
+
+# mpirun -np $BERT_CLUSTER_NP --hostfile $BERT_CLUSTER_HOST.mpi -display-allocation --allow-run-as-root python3 test_horovod.py
 #        -x LD_LIBRARY_PATH=$HOME/aws-ofi-nccl/install/lib/:$HOME/nccl/build/lib:/usr/local/cuda-10.0/lib64:/opt/amazon/efa/lib64:$LD_LIBRARY_PATH \
 #        -x FI_PROVIDER="tcp" -x FI_EFA_TX_MIN_CREDITS=64 \
 #        -x NCCL_SOCKET_IFNAME=eth0 \
 #        -x NCCL_IB_HCA=eth0 \
 #        ompi_bind_p3dn.sh \
+        #-x NCCL_TREE_THRESHOLD=15360000 \
 
 mpirun -np $BERT_CLUSTER_NP --hostfile $BERT_CLUSTER_HOST.mpi -display-allocation --allow-run-as-root \
 	-mca pml ob1 -mca btl ^openib -mca btl_tcp_if_exclude docker0,lo \
@@ -22,7 +22,6 @@ mpirun -np $BERT_CLUSTER_NP --hostfile $BERT_CLUSTER_HOST.mpi -display-allocatio
         -x HOROVOD_NUM_NCCL_STREAMS=1 \
 	-x MXNET_EXEC_BULK_EXEC_MAX_NODE_TRAIN_FWD=99999 \
 	-x MXNET_SAFE_ACCUMULATION=1 \
-        -x NCCL_TREE_THRESHOLD=15360000 \
 	--tag-output \
         python3 run_pretraining.py \
 	--data="$BERT_PHASE2_DATA" \
